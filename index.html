@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Waveshare 7-Color E-Paper Image Converter</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 900px; margin: 0 auto; padding: 20px; background: #f5f5f5; color: #333;
+    }
+    h1 { font-size: 1.4em; margin-bottom: 4px; }
+    .subtitle { color: #666; font-size: 0.9em; margin-bottom: 12px; }
+    .palette-strip {
+      display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 24px;
+    }
+    .palette-strip span { flex: 1; }
+    .drop-zone {
+      border: 2px dashed #ccc; border-radius: 8px; padding: 48px 20px;
+      text-align: center; cursor: pointer; margin-bottom: 20px; background: #fff;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .drop-zone:hover, .drop-zone.dragover { border-color: #666; background: #fafafa; }
+    .drop-zone p { color: #888; }
+    .hidden { display: none !important; }
+    .card {
+      background: #fff; border-radius: 8px; padding: 20px;
+      margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .card h2 { font-size: 1.1em; margin-bottom: 12px; }
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label { display: block; font-size: 0.85em; color: #555; margin-bottom: 4px; }
+    select, input[type="number"] {
+      width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.95em;
+    }
+    .crop-info { grid-column: 1 / -1; font-size: 0.8em; color: #888; }
+    .btn {
+      display: inline-block; padding: 10px 24px; border: none;
+      border-radius: 6px; font-size: 0.95em; cursor: pointer; font-weight: 500;
+    }
+    .btn-primary { background: #333; color: #fff; }
+    .btn-primary:hover { background: #555; }
+    .btn-primary:disabled { background: #aaa; cursor: not-allowed; }
+    .btn-download { background: #2563eb; color: #fff; }
+    .btn-download:hover { background: #1d4ed8; }
+    .actions { display: flex; gap: 12px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+    #status { font-size: 0.85em; color: #666; }
+
+    .crop-container {
+      position: relative; display: inline-block; max-width: 100%;
+      user-select: none; -webkit-user-select: none; line-height: 0;
+    }
+    .crop-container img {
+      max-width: 100%; height: auto; display: block;
+      border: 1px solid #eee; border-radius: 4px;
+    }
+    .crop-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      pointer-events: auto; cursor: crosshair;
+    }
+    .crop-dim { position: absolute; background: rgba(0,0,0,0.45); }
+    .crop-selection {
+      position: absolute; border: 2px solid #fff;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(0,0,0,0.15);
+    }
+    .crop-handle {
+      position: absolute; width: 12px; height: 12px;
+      background: #fff; border: 1px solid #666; border-radius: 2px;
+    }
+    .crop-handle.tl { top: -6px; left: -6px; cursor: nw-resize; }
+    .crop-handle.tr { top: -6px; right: -6px; cursor: ne-resize; }
+    .crop-handle.bl { bottom: -6px; left: -6px; cursor: sw-resize; }
+    .crop-handle.br { bottom: -6px; right: -6px; cursor: se-resize; }
+    .crop-selection-inner { width: 100%; height: 100%; cursor: move; }
+
+    .previews { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .preview-box h3 { font-size: 0.9em; color: #555; margin-bottom: 8px; }
+    .preview-box canvas {
+      max-width: 100%; height: auto;
+      border: 1px solid #eee; border-radius: 4px; background: #fafafa;
+    }
+    footer { text-align: center; color: #999; font-size: 0.8em; margin-top: 24px; }
+    @media (max-width: 600px) {
+      .settings-grid { grid-template-columns: 1fr; }
+      .previews { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Waveshare 7-Color E-Paper Image Converter</h1>
+  <p class="subtitle">Convert images for 7.3" ACeP 7-Color E-Paper display. All processing happens in your browser.</p>
+  <div class="palette-strip">
+    <span style="background:#000"></span>
+    <span style="background:#fff;border-top:1px solid #ddd;border-bottom:1px solid #ddd"></span>
+    <span style="background:#0f0"></span>
+    <span style="background:#00f"></span>
+    <span style="background:#f00"></span>
+    <span style="background:#ff0"></span>
+    <span style="background:#ff8000"></span>
+  </div>
+
+  <div class="drop-zone" id="dropZone">
+    <p>Drag & drop an image here, or click to select</p>
+    <p style="font-size:0.8em;margin-top:8px;color:#aaa">Supports JPG, PNG, GIF, BMP</p>
+    <input type="file" id="fileInput" accept="image/*" style="display:none">
+  </div>
+
+  <div class="card hidden" id="settingsPanel">
+    <h2>Settings</h2>
+    <div class="settings-grid">
+      <div>
+        <label for="orientation">Orientation</label>
+        <select id="orientation">
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select>
+      </div>
+      <div></div>
+      <div>
+        <label for="widthInput">Width (px)</label>
+        <input type="number" id="widthInput" value="480" min="1">
+      </div>
+      <div>
+        <label for="heightInput">Height (px)</label>
+        <input type="number" id="heightInput" value="800" min="1">
+      </div>
+      <div class="crop-info">Drag the crop on the image to choose what fills the display. Aspect ratio is locked.</div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" id="convertBtn">Convert</button>
+      <button class="btn btn-download hidden" id="downloadBtn">Download BMP</button>
+      <span id="status"></span>
+    </div>
+  </div>
+
+  <div class="card hidden" id="previewPanel">
+    <h2>Preview</h2>
+    <div class="previews">
+      <div class="preview-box">
+        <h3>Original</h3>
+        <div class="crop-container" id="cropContainer">
+          <img id="originalImg">
+          <div class="crop-overlay" id="cropOverlay">
+            <div class="crop-dim" id="dimTop"></div>
+            <div class="crop-dim" id="dimLeft"></div>
+            <div class="crop-dim" id="dimRight"></div>
+            <div class="crop-dim" id="dimBottom"></div>
+            <div class="crop-selection hidden" id="cropSelection">
+              <div class="crop-selection-inner" id="cropMove"></div>
+              <div class="crop-handle tl" data-handle="tl"></div>
+              <div class="crop-handle tr" data-handle="tr"></div>
+              <div class="crop-handle bl" data-handle="bl"></div>
+              <div class="crop-handle br" data-handle="br"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="preview-box">
+        <h3>Converted</h3>
+        <canvas id="resultPreview"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Based on <a href="https://gitlab.com/matthew/color-e-paper-image-converter">color-e-paper-image-converter</a> &middot; MIT License
+  </footer>
+
+  <script>
+    const PALETTE = [
+      [0, 0, 0], [255, 255, 255], [0, 255, 0], [0, 0, 255],
+      [255, 0, 0], [255, 255, 0], [255, 128, 0]
+    ];
+
+    let sourceImage = null;
+    let originalFileName = 'image';
+    let resultBlob = null;
+
+    // Crop state in display coordinates (relative to displayed image)
+    let cropRect = { x: 0, y: 0, w: 0, h: 0 };
+    let dragging = null; // null | 'move' | 'tl' | 'tr' | 'bl' | 'br'
+    let dragStart = { x: 0, y: 0 };
+    let cropStartRect = null;
+
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const previewPanel = document.getElementById('previewPanel');
+    const orientation = document.getElementById('orientation');
+    const widthInput = document.getElementById('widthInput');
+    const heightInput = document.getElementById('heightInput');
+    const convertBtn = document.getElementById('convertBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const status = document.getElementById('status');
+    const originalImg = document.getElementById('originalImg');
+    const cropOverlay = document.getElementById('cropOverlay');
+    const cropSelection = document.getElementById('cropSelection');
+    const resultPreview = document.getElementById('resultPreview');
+
+    function getTargetAspect() {
+      const w = parseInt(widthInput.value) || 480;
+      const h = parseInt(heightInput.value) || 800;
+      return w / h;
+    }
+
+    // Compute the largest crop rect at target aspect ratio that fits the displayed image, centered
+    function initCropRect() {
+      const dispW = originalImg.clientWidth;
+      const dispH = originalImg.clientHeight;
+      if (!dispW || !dispH) return;
+      const aspect = getTargetAspect();
+      let w, h;
+      if (dispW / dispH > aspect) {
+        // Image is wider than target ratio -- fit by height
+        h = dispH;
+        w = h * aspect;
+      } else {
+        // Image is taller than target ratio -- fit by width
+        w = dispW;
+        h = w / aspect;
+      }
+      cropRect = {
+        x: (dispW - w) / 2,
+        y: (dispH - h) / 2,
+        w: w,
+        h: h
+      };
+      cropSelection.classList.remove('hidden');
+      updateCropOverlay();
+    }
+
+    // Drop zone
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) loadImage(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) loadImage(fileInput.files[0]);
+    });
+
+    function loadImage(file) {
+      if (!file.type.startsWith('image/')) { status.textContent = 'Unsupported file type.'; return; }
+      originalFileName = file.name;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          sourceImage = img;
+          originalImg.src = img.src;
+          if (img.width > img.height) {
+            orientation.value = 'landscape';
+            widthInput.value = 800; heightInput.value = 480;
+          } else {
+            orientation.value = 'portrait';
+            widthInput.value = 480; heightInput.value = 800;
+          }
+          settingsPanel.classList.remove('hidden');
+          previewPanel.classList.remove('hidden');
+          downloadBtn.classList.add('hidden');
+          status.textContent = `Loaded: ${img.width} x ${img.height}`;
+          // Wait for image to render so clientWidth/clientHeight are available
+          requestAnimationFrame(() => requestAnimationFrame(() => initCropRect()));
+          // Clear result
+          resultPreview.width = 1; resultPreview.height = 1;
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Orientation toggle -- swap dimensions and reinit crop
+    orientation.addEventListener('change', () => {
+      const w = widthInput.value;
+      widthInput.value = heightInput.value;
+      heightInput.value = w;
+      if (sourceImage) initCropRect();
+    });
+
+    // Reinit crop when dimensions change manually
+    widthInput.addEventListener('change', () => { if (sourceImage) initCropRect(); });
+    heightInput.addEventListener('change', () => { if (sourceImage) initCropRect(); });
+
+    // --- Crop interaction ---
+    function getOverlayPos(e) {
+      const rect = cropOverlay.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: Math.max(0, Math.min(clientX - rect.left, rect.width)),
+        y: Math.max(0, Math.min(clientY - rect.top, rect.height))
+      };
+    }
+
+    cropOverlay.addEventListener('mousedown', onCropStart);
+    cropOverlay.addEventListener('touchstart', onCropStart, { passive: false });
+
+    function onCropStart(e) {
+      if (!sourceImage) return;
+      e.preventDefault();
+      const pos = getOverlayPos(e);
+      const handle = e.target.dataset?.handle;
+
+      if (handle) {
+        dragging = handle;
+      } else if (e.target.id === 'cropMove') {
+        dragging = 'move';
+      } else {
+        return; // Click outside crop -- do nothing (crop is always present)
+      }
+      dragStart = pos;
+      cropStartRect = { ...cropRect };
+
+      document.addEventListener('mousemove', onCropDrag);
+      document.addEventListener('mouseup', onCropEnd);
+      document.addEventListener('touchmove', onCropDrag, { passive: false });
+      document.addEventListener('touchend', onCropEnd);
+    }
+
+    function onCropDrag(e) {
+      if (!dragging) return;
+      e.preventDefault();
+      const pos = getOverlayPos(e);
+      const maxW = originalImg.clientWidth;
+      const maxH = originalImg.clientHeight;
+      const dx = pos.x - dragStart.x;
+      const dy = pos.y - dragStart.y;
+      const s = cropStartRect;
+      const aspect = getTargetAspect();
+
+      if (dragging === 'move') {
+        let nx = Math.max(0, Math.min(s.x + dx, maxW - s.w));
+        let ny = Math.max(0, Math.min(s.y + dy, maxH - s.h));
+        cropRect = { x: nx, y: ny, w: s.w, h: s.h };
+      } else {
+        // Handle resize with locked aspect ratio
+        // Determine the anchor corner (opposite of the dragged handle)
+        let ax, ay; // anchor point
+        if (dragging === 'tl') { ax = s.x + s.w; ay = s.y + s.h; }
+        else if (dragging === 'tr') { ax = s.x; ay = s.y + s.h; }
+        else if (dragging === 'bl') { ax = s.x + s.w; ay = s.y; }
+        else { ax = s.x; ay = s.y; } // br
+
+        // Compute new width from the drag position distance to anchor
+        let newW = Math.abs(pos.x - ax);
+        let newH = newW / aspect;
+
+        // If height exceeds the distance, compute from height instead
+        let hFromY = Math.abs(pos.y - ay);
+        if (newH > hFromY && hFromY * aspect <= Math.abs(pos.x - ax)) {
+          // Use whichever dimension the user dragged further
+        }
+        // Pick the dimension that fits: use the smaller of width-derived and height-derived
+        let wFromH = hFromY * aspect;
+        if (wFromH / aspect <= maxH && wFromH <= maxW) {
+          // Choose the larger crop that fits
+          if (newW > wFromH) {
+            // width-driven is larger, check if height fits
+            if (newH > maxH) { newH = maxH; newW = newH * aspect; }
+          } else {
+            newW = wFromH; newH = hFromY;
+          }
+        }
+        if (newH > maxH) { newH = maxH; newW = newH * aspect; }
+        if (newW > maxW) { newW = maxW; newH = newW / aspect; }
+
+        // Minimum size
+        if (newW < 20) { newW = 20; newH = newW / aspect; }
+
+        // Position based on anchor
+        let nx = dragging.includes('l') ? ax - newW : ax;
+        let ny = dragging.includes('t') ? ay - newH : ay;
+
+        // Clamp to bounds
+        if (nx < 0) { nx = 0; newW = ax; newH = newW / aspect; }
+        if (ny < 0) { ny = 0; newH = ay; newW = newH * aspect; }
+        if (nx + newW > maxW) { newW = maxW - nx; newH = newW / aspect; }
+        if (ny + newH > maxH) { newH = maxH - ny; newW = newH * aspect; }
+
+        cropRect = { x: nx, y: ny, w: newW, h: newH };
+      }
+      updateCropOverlay();
+    }
+
+    function onCropEnd() {
+      dragging = null;
+      document.removeEventListener('mousemove', onCropDrag);
+      document.removeEventListener('mouseup', onCropEnd);
+      document.removeEventListener('touchmove', onCropDrag);
+      document.removeEventListener('touchend', onCropEnd);
+    }
+
+    function updateCropOverlay() {
+      const r = cropRect;
+      const sel = cropSelection;
+      if (r.w < 2 || r.h < 2) { sel.classList.add('hidden'); return; }
+      sel.classList.remove('hidden');
+      sel.style.left = r.x + 'px'; sel.style.top = r.y + 'px';
+      sel.style.width = r.w + 'px'; sel.style.height = r.h + 'px';
+
+      const dt = document.getElementById('dimTop');
+      const dl = document.getElementById('dimLeft');
+      const dr = document.getElementById('dimRight');
+      const db = document.getElementById('dimBottom');
+      dt.style.cssText = `top:0;left:0;right:0;height:${r.y}px`;
+      db.style.cssText = `bottom:0;left:0;right:0;top:${r.y + r.h}px`;
+      dl.style.cssText = `top:${r.y}px;left:0;width:${r.x}px;height:${r.h}px`;
+      dr.style.cssText = `top:${r.y}px;right:0;left:${r.x + r.w}px;height:${r.h}px`;
+    }
+
+    function getCropInImageCoords() {
+      const dispW = originalImg.clientWidth;
+      const dispH = originalImg.clientHeight;
+      const imgW = sourceImage.naturalWidth;
+      const imgH = sourceImage.naturalHeight;
+      const scaleX = imgW / dispW;
+      const scaleY = imgH / dispH;
+      return {
+        x1: Math.round(cropRect.x * scaleX),
+        y1: Math.round(cropRect.y * scaleY),
+        x2: Math.round((cropRect.x + cropRect.w) * scaleX),
+        y2: Math.round((cropRect.y + cropRect.h) * scaleY)
+      };
+    }
+
+    // Convert
+    convertBtn.addEventListener('click', async () => {
+      if (!sourceImage) return;
+      convertBtn.disabled = true;
+      downloadBtn.classList.add('hidden');
+      status.textContent = 'Converting...';
+      await new Promise(r => setTimeout(r, 0));
+
+      try {
+        const targetW = parseInt(widthInput.value) || 480;
+        const targetH = parseInt(heightInput.value) || 800;
+
+        // Step 1: Crop to selection
+        const c = getCropInImageCoords();
+        const cw = c.x2 - c.x1;
+        const ch = c.y2 - c.y1;
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = cw;
+        cropCanvas.height = ch;
+        cropCanvas.getContext('2d').drawImage(sourceImage, c.x1, c.y1, cw, ch, 0, 0, cw, ch);
+
+        // Step 2: Resize to exact target dimensions (aspect ratio already matches)
+        const resizeCanvas = document.createElement('canvas');
+        resizeCanvas.width = targetW;
+        resizeCanvas.height = targetH;
+        const rCtx = resizeCanvas.getContext('2d');
+        rCtx.imageSmoothingEnabled = true;
+        rCtx.imageSmoothingQuality = 'high';
+        rCtx.drawImage(cropCanvas, 0, 0, targetW, targetH);
+        const imageData = rCtx.getImageData(0, 0, targetW, targetH);
+
+        // Step 3: Floyd-Steinberg dithering
+        floydSteinbergDither(imageData, targetW, targetH);
+
+        // Step 4: Show preview
+        resultPreview.width = targetW;
+        resultPreview.height = targetH;
+        resultPreview.getContext('2d').putImageData(imageData, 0, 0);
+
+        // Step 5: Generate BMP
+        resultBlob = generateBMP(imageData, targetW, targetH);
+        downloadBtn.classList.remove('hidden');
+        status.textContent = 'Done! Ready to download.';
+      } catch (err) {
+        status.textContent = 'Error: ' + err.message;
+      }
+      convertBtn.disabled = false;
+    });
+
+    function findNearestColor(r, g, b) {
+      let minDist = Infinity, best = PALETTE[0];
+      for (const c of PALETTE) {
+        const dr = r - c[0], dg = g - c[1], db = b - c[2];
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist < minDist) { minDist = dist; best = c; }
+      }
+      return best;
+    }
+
+    function floydSteinbergDither(imageData, width, height) {
+      const data = imageData.data;
+      const pixels = new Float32Array(width * height * 3);
+      for (let i = 0; i < width * height; i++) {
+        pixels[i * 3] = data[i * 4];
+        pixels[i * 3 + 1] = data[i * 4 + 1];
+        pixels[i * 3 + 2] = data[i * 4 + 2];
+      }
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 3;
+          const oldR = pixels[idx], oldG = pixels[idx + 1], oldB = pixels[idx + 2];
+          const [newR, newG, newB] = findNearestColor(oldR, oldG, oldB);
+          pixels[idx] = newR; pixels[idx + 1] = newG; pixels[idx + 2] = newB;
+          const errR = oldR - newR, errG = oldG - newG, errB = oldB - newB;
+          if (x + 1 < width) {
+            const i = (y * width + x + 1) * 3;
+            pixels[i] += errR * 7/16; pixels[i+1] += errG * 7/16; pixels[i+2] += errB * 7/16;
+          }
+          if (x - 1 >= 0 && y + 1 < height) {
+            const i = ((y+1) * width + x - 1) * 3;
+            pixels[i] += errR * 3/16; pixels[i+1] += errG * 3/16; pixels[i+2] += errB * 3/16;
+          }
+          if (y + 1 < height) {
+            const i = ((y+1) * width + x) * 3;
+            pixels[i] += errR * 5/16; pixels[i+1] += errG * 5/16; pixels[i+2] += errB * 5/16;
+          }
+          if (x + 1 < width && y + 1 < height) {
+            const i = ((y+1) * width + x + 1) * 3;
+            pixels[i] += errR/16; pixels[i+1] += errG/16; pixels[i+2] += errB/16;
+          }
+        }
+      }
+      for (let i = 0; i < width * height; i++) {
+        data[i * 4]     = Math.max(0, Math.min(255, Math.round(pixels[i * 3])));
+        data[i * 4 + 1] = Math.max(0, Math.min(255, Math.round(pixels[i * 3 + 1])));
+        data[i * 4 + 2] = Math.max(0, Math.min(255, Math.round(pixels[i * 3 + 2])));
+      }
+    }
+
+    function generateBMP(imageData, width, height) {
+      const rowSize = Math.ceil((width * 3) / 4) * 4;
+      const pixelDataSize = rowSize * height;
+      const fileSize = 54 + pixelDataSize;
+      const buffer = new ArrayBuffer(fileSize);
+      const view = new DataView(buffer);
+      view.setUint8(0, 0x42); view.setUint8(1, 0x4D);
+      view.setUint32(2, fileSize, true);
+      view.setUint32(10, 54, true);
+      view.setUint32(14, 40, true);
+      view.setInt32(18, width, true);
+      view.setInt32(22, height, true);
+      view.setUint16(26, 1, true);
+      view.setUint16(28, 24, true);
+      view.setUint32(34, pixelDataSize, true);
+      view.setUint32(38, 2835, true);
+      view.setUint32(42, 2835, true);
+      const data = imageData.data;
+      for (let y = 0; y < height; y++) {
+        const destRow = height - 1 - y;
+        for (let x = 0; x < width; x++) {
+          const srcIdx = (y * width + x) * 4;
+          const destIdx = 54 + destRow * rowSize + x * 3;
+          view.setUint8(destIdx, data[srcIdx + 2]);
+          view.setUint8(destIdx + 1, data[srcIdx + 1]);
+          view.setUint8(destIdx + 2, data[srcIdx]);
+        }
+      }
+      return new Blob([buffer], { type: 'image/bmp' });
+    }
+
+    downloadBtn.addEventListener('click', () => {
+      if (!resultBlob) return;
+      const url = URL.createObjectURL(resultBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = originalFileName.replace(/\.[^.]+$/, '') + '.bmp';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>
