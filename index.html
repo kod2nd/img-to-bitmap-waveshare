@@ -1,0 +1,1907 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Waveshare E-Paper Photo Converter</title>
+  <style>
+    :root {
+      --bg: #14161a;
+      --bg-elev: #1b1e24;
+      --bg-elev2: #22262e;
+      --border: #2c313a;
+      --text: #e6e8eb;
+      --text-dim: #9aa1ab;
+      --text-faint: #6b7380;
+      --accent: #e8a13c;
+      --accent-hi: #f2b95c;
+      --accent-soft: rgba(232, 161, 60, 0.14);
+      --danger: #e05b5b;
+      --ok: #5bbf8a;
+      --shadow: 0 6px 24px rgba(0,0,0,0.35);
+      --radius: 10px;
+    }
+    html[data-theme="light"] {
+      --bg: #f2f3f5;
+      --bg-elev: #ffffff;
+      --bg-elev2: #f6f7f9;
+      --border: #d9dde3;
+      --text: #1c1f24;
+      --text-dim: #5a626e;
+      --text-faint: #8a919c;
+      --accent: #c07f1f;
+      --accent-hi: #9a650f;
+      --accent-soft: rgba(192, 127, 31, 0.12);
+      --shadow: 0 6px 24px rgba(0,0,0,0.10);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.4;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    button { font-family: inherit; }
+    input, select { font-family: inherit; }
+
+    /* ---------- Toolbar ---------- */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 16px;
+      background: var(--bg-elev);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      flex-wrap: wrap;
+    }
+    .toolbar .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+    .toolbar .brand h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.2px; }
+    .toolbar .brand .sub { font-size: 11px; color: var(--text-faint); }
+    .toolbar .tb-group { display: flex; align-items: center; gap: 8px; }
+    .tb-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-faint); }
+
+    .btn {
+      background: var(--bg-elev2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 7px 14px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+    }
+    .btn:hover { background: var(--border); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-accent {
+      background: var(--accent);
+      color: #15171a;
+      border-color: transparent;
+      font-weight: 600;
+    }
+    .btn-accent:hover { background: var(--accent-hi); }
+    .btn-ghost { background: transparent; }
+    .btn-ghost:hover { background: var(--bg-elev2); }
+    .btn-danger { color: var(--danger); }
+    select, input[type="number"] {
+      background: var(--bg-elev2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 8px;
+      font-size: 13px;
+    }
+    input[type="range"] { accent-color: var(--accent); width: 100%; }
+
+    /* ---------- Layout ---------- */
+    .layout {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+    .sidebar {
+      width: 280px;
+      min-width: 260px;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .sidebar-left { border-right: 1px solid var(--border); }
+    .sidebar-right { border-left: 1px solid var(--border); }
+    .center {
+      flex: 1;
+      min-width: 0;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ---------- Panels / sections ---------- */
+    .sidebar > .panel {
+      flex: 0 0 auto;
+      flex-shrink: 0;
+    }
+    .panel {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      cursor: pointer;
+      user-select: none;
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+    .panel.collapsed .panel-head { border-radius: var(--radius); }
+    .panel-head .chev { transition: transform 0.15s; color: var(--text-faint); font-size: 10px; }
+    .panel.collapsed .chev { transform: rotate(-90deg); }
+    .panel-head h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-dim); font-weight: 600; }
+    .panel-head .badge { margin-left: auto; font-size: 10px; color: var(--text-faint); }
+    .panel-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .panel.collapsed .panel-body { display: none; }
+    .panel:not(.collapsed) .panel-body:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field-row { display: flex; align-items: center; gap: 8px; }
+    .field-row .lbl { flex: 1; font-size: 12px; color: var(--text-dim); }
+    .field-row .val { width: 56px; text-align: right; font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; }
+    .field-row input[type="number"] { width: 64px; padding: 4px 6px; font-size: 12px; }
+    .ctl { display: flex; flex-direction: column; gap: 3px; }
+    .ctl .head { display: flex; align-items: center; gap: 6px; }
+    .ctl .head .name { flex: 1; font-size: 12px; color: var(--text-dim); }
+    .ctl .head .value { font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; width: 46px; text-align: right; }
+    .ctl .head .reset { background: none; border: none; color: var(--text-faint); cursor: pointer; font-size: 12px; padding: 2px; }
+    .ctl .head .reset:hover { color: var(--accent); }
+    .ctl input[type="range"] { height: 18px; }
+
+    .swatch-row { display: flex; align-items: center; gap: 8px; }
+    .swatch {
+      width: 20px; height: 20px; border-radius: 5px;
+      border: 1px solid rgba(255,255,255,0.25);
+      flex-shrink: 0;
+    }
+    .swatch input[type="color"] { width: 0; height: 0; opacity: 0; border: none; padding: 0; }
+    .swatch-row .name { font-size: 12px; color: var(--text-dim); width: 64px; }
+    .swatch-row .bias { flex: 1; }
+    .swatch-row .val { width: 34px; text-align: right; font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+    .swatch-row .reset { background: none; border: none; color: var(--text-faint); cursor: pointer; font-size: 12px; padding: 2px; flex-shrink: 0; }
+    .swatch-row .reset:hover { color: var(--accent); }
+
+    .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-dim); }
+    .check-row input { accent-color: var(--accent); }
+
+    /* ---------- Drop zone ---------- */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 26px 12px;
+      text-align: center;
+      cursor: pointer;
+      background: var(--bg-elev);
+      transition: border-color 0.15s, background 0.15s;
+      color: var(--text-dim);
+    }
+    .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+    .drop-zone .dz-main { font-size: 13px; }
+    .drop-zone .dz-sub { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+
+    /* ---------- Crop / previews ---------- */
+    .crop-container { position: relative; display: inline-block; max-width: 100%; user-select: none; line-height: 0; }
+    .crop-container img { max-width: 100%; height: auto; display: block; border-radius: 8px; border: 1px solid var(--border); }
+    .crop-overlay { position: absolute; inset: 0; pointer-events: auto; cursor: crosshair; }
+    .crop-dim { position: absolute; background: rgba(0,0,0,0.45); }
+    .crop-selection { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(0,0,0,0.2); }
+    .crop-handle {
+      position: absolute; width: 12px; height: 12px;
+      background: #fff; border: 1px solid #333; border-radius: 2px;
+    }
+    .crop-handle.tl { top: -6px; left: -6px; cursor: nw-resize; }
+    .crop-handle.tr { top: -6px; right: -6px; cursor: ne-resize; }
+    .crop-handle.bl { bottom: -6px; left: -6px; cursor: sw-resize; }
+    .crop-handle.br { bottom: -6px; right: -6px; cursor: se-resize; }
+    .crop-selection-inner { width: 100%; height: 100%; cursor: move; }
+
+    .empty-state {
+      flex: 1;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; color: var(--text-faint); text-align: center; padding: 40px;
+      min-height: 420px;
+      border-width: 3px;
+    }
+    .empty-state .big { font-size: 20px; color: var(--text-dim); }
+    .empty-state:hover, .empty-state.dragover { border-color: var(--accent); background: var(--accent-soft); }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 16px;
+      align-items: start;
+    }
+    .preview-box {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .preview-box h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-dim); }
+    .preview-box .ph { position: relative; text-align: center; }
+    .preview-box canvas, .preview-box img { max-width: 100%; width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--border); background: #101214; }
+    html[data-theme="light"] .preview-box canvas { background: #e9eaec; }
+    .compare-wrap { position: relative; text-align: center; }
+    .compare-wrap canvas { display: block; }
+    .compare-top { position: absolute; top: 0; left: 0; }
+    .compare-slider-row { display: flex; align-items: center; gap: 8px; }
+
+    /* ---------- Right sidebar analysis ---------- */
+    .hist-canvas { width: 100%; height: 120px; display: block; border: 1px solid var(--border); border-radius: 6px; background: #101214; }
+    .usage-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .usage-row .u-swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--border); flex-shrink: 0; }
+    .usage-row .u-name { width: 56px; color: var(--text-dim); }
+    .usage-bar-bg { flex: 1; height: 8px; background: var(--bg-elev2); border-radius: 4px; overflow: hidden; }
+    .usage-bar { height: 100%; border-radius: 4px; min-width: 2px; }
+    .usage-row .u-pct { width: 40px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+
+    /* ---------- Queue ---------- */
+    .queue-list { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; }
+    .queue-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 8px; background: var(--bg-elev2); border: 1px solid var(--border); border-radius: 7px;
+      font-size: 12px;
+    }
+    .queue-item .q-check { accent-color: var(--accent); }
+    .queue-item .q-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .queue-item .q-status { font-size: 11px; color: var(--text-faint); }
+    .queue-item .q-status.done { color: var(--ok); }
+    .queue-item .q-status.error { color: var(--danger); }
+    .queue-item .q-dl { color: var(--accent); text-decoration: none; font-size: 11px; }
+
+    /* ---------- Status bar ---------- */
+    .statusbar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 7px 16px;
+      background: var(--bg-elev);
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .statusbar #status { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .statusbar .progress-wrap { width: 180px; height: 5px; background: var(--bg-elev2); border-radius: 3px; overflow: hidden; display: none; }
+    .statusbar .progress-wrap .bar { height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width 0.1s; }
+
+    .hidden { display: none !important; }
+    .hint { font-size: 11px; color: var(--text-faint); }
+
+    .dim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .settings-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    @media (max-width: 800px) {
+      .preview-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 900px) {
+      .layout { flex-direction: column; overflow-y: auto; }
+      .sidebar { width: 100%; min-width: 0; border: none; }
+      body { overflow: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">
+      <h1>E-Paper Photo Converter</h1>
+      <span class="sub">Waveshare</span>
+    </div>
+    <div class="tb-group">
+      <label class="tb-label" for="profileSelect">Display</label>
+      <select id="profileSelect"></select>
+    </div>
+    <div class="tb-group">
+      <label class="tb-label" for="presetSelect">Preset</label>
+      <select id="presetSelect"></select>
+    </div>
+    <button class="btn btn-ghost" id="resetBtn" title="Reset to defaults">Reset</button>
+    <button class="btn btn-ghost" id="themeBtn" title="Toggle theme">Light</button>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar sidebar-left" id="leftSidebar">
+      <div class="panel">
+        <div class="panel-head" data-toggle>
+          <span class="chev">&#9662;</span>
+          <h2>Image</h2>
+        </div>
+        <div class="panel-body">
+          <button class="btn" id="changeImageBtn">Change image&hellip;</button>
+          <input type="file" id="fileInput" accept="image/*" style="display:none">
+          <div id="imageInfo" class="hint"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" data-toggle>
+          <span class="chev">&#9662;</span>
+          <h2>Crop</h2>
+        </div>
+        <div class="panel-body">
+          <div class="field">
+            <div class="field-row">
+              <span class="lbl">Orientation</span>
+              <select id="orientation" style="width:auto">
+                <option value="portrait">Portrait</option>
+                <option value="landscape">Landscape</option>
+              </select>
+            </div>
+          </div>
+          <div class="dim-grid">
+            <div class="field">
+              <span class="lbl">Width (px)</span>
+              <input type="number" id="widthInput" value="480" min="1">
+            </div>
+            <div class="field">
+              <span class="lbl">Height (px)</span>
+              <input type="number" id="heightInput" value="800" min="1">
+            </div>
+          </div>
+          <div class="hint">Drag the crop to choose what fills the display. Aspect ratio is locked.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" data-toggle>
+          <span class="chev">&#9662;</span>
+          <h2>Image Adjustments</h2>
+        </div>
+        <div class="panel-body" id="adjustControls"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" data-toggle>
+          <span class="chev">&#9662;</span>
+          <h2>Palette</h2>
+        </div>
+        <div class="panel-body">
+          <div class="hint">Colour bias favours a colour when matching. Click a swatch to recalibrate its RGB.</div>
+          <div id="paletteList"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" data-toggle>
+          <span class="chev">&#9662;</span>
+          <h2>Dithering</h2>
+        </div>
+        <div class="panel-body">
+          <div class="field">
+            <span class="lbl">Algorithm</span>
+            <select id="ditherAlgorithm">
+              <option value="floyd">Floyd–Steinberg</option>
+              <option value="atkinson">Atkinson</option>
+              <option value="jarvis">Jarvis–Judice–Ninke</option>
+              <option value="sierra">Sierra</option>
+              <option value="stucki">Stucki</option>
+            </select>
+          </div>
+          <div class="ctl">
+            <div class="head">
+              <span class="name">Strength</span>
+              <span class="value" id="ditherStrengthVal">80%</span>
+              <button class="reset" data-reset="ditherStrength" title="Reset">&#8634;</button>
+            </div>
+            <input type="range" id="ditherStrength" min="0" max="100" step="1" value="80">
+          </div>
+          <div class="check-row">
+            <input type="checkbox" id="ditherSerpentine" checked>
+            <label for="ditherSerpentine">Serpentine scan</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" data-toggle>
+          <span class="chev">&#9662;</span>
+          <h2>Output</h2>
+        </div>
+        <div class="panel-body">
+          <div class="field-row">
+            <span class="lbl">Format</span>
+            <select id="outputFormat" style="width:auto">
+              <option value="bmp">BMP (24-bit)</option>
+              <option value="png">PNG</option>
+            </select>
+          </div>
+          <button class="btn btn-accent" id="downloadBtn" disabled>Download</button>
+          <div class="settings-row">
+            <button class="btn btn-ghost" id="exportSettingsBtn">Export settings</button>
+            <button class="btn btn-ghost" id="importSettingsBtn">Import</button>
+          </div>
+          <input type="file" id="settingsFile" accept="application/json,.json" style="display:none">
+        </div>
+      </div>
+    </aside>
+
+    <section class="center" id="centerArea">
+      <div class="empty-state drop-zone" id="emptyState">
+        <div class="big">Drop an image to begin</div>
+        <div>All processing happens in your browser. Nothing is uploaded.</div>
+        <div class="dz-sub">JPG, PNG, GIF, BMP</div>
+      </div>
+
+      <div class="preview-grid hidden" id="previewGrid">
+        <div class="preview-box">
+          <h3>Original</h3>
+          <div class="ph" id="originalHolder">
+            <div class="crop-container" id="cropContainer">
+              <img id="originalImg" alt="Original">
+              <div class="crop-overlay" id="cropOverlay">
+                <div class="crop-dim" id="dimTop"></div>
+                <div class="crop-dim" id="dimLeft"></div>
+                <div class="crop-dim" id="dimRight"></div>
+                <div class="crop-dim" id="dimBottom"></div>
+                <div class="crop-selection hidden" id="cropSelection">
+                  <div class="crop-selection-inner" id="cropMove"></div>
+                  <div class="crop-handle tl" data-handle="tl"></div>
+                  <div class="crop-handle tr" data-handle="tr"></div>
+                  <div class="crop-handle bl" data-handle="bl"></div>
+                  <div class="crop-handle br" data-handle="br"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="preview-box">
+          <h3>Enhanced</h3>
+          <div class="ph"><canvas id="enhancedPreview"></canvas></div>
+        </div>
+
+        <div class="preview-box">
+          <h3>Final E-Paper</h3>
+          <div class="compare-wrap" id="compareWrap">
+            <canvas id="finalPreview"></canvas>
+            <canvas id="compareTop" class="compare-top hidden"></canvas>
+          </div>
+          <div class="compare-slider-row">
+            <label class="tb-label">Compare</label>
+            <input type="checkbox" id="compareToggle">
+            <input type="range" id="compareSlider" min="0" max="100" value="50" disabled>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="sidebar sidebar-right" id="rightSidebar">
+      <div class="panel">
+        <div class="panel-head" data-toggle>
+          <span class="chev">&#9662;</span>
+          <h2>Histogram</h2>
+        </div>
+        <div class="panel-body">
+          <canvas class="hist-canvas" id="histogramCanvas" width="260" height="120"></canvas>
+          <div class="hint" id="histogramInfo">Luminance of the enhanced image.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" data-toggle>
+          <span class="chev">&#9662;</span>
+          <h2>Palette Usage</h2>
+        </div>
+        <div class="panel-body" id="paletteUsage">
+          <div class="hint">Convert to see usage.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head" data-toggle>
+          <span class="chev">&#9662;</span>
+          <h2>Conversion Queue</h2>
+        </div>
+        <div class="panel-body">
+          <button class="btn" id="addFilesBtn">Add files</button>
+          <input type="file" id="batchInput" accept="image/*" multiple style="display:none">
+          <div class="settings-row">
+            <button class="btn" id="convertSelectedBtn">Convert selected</button>
+            <button class="btn" id="convertAllBtn" disabled>Convert all</button>
+          </div>
+          <button class="btn btn-accent" id="downloadZipBtn" disabled>Download ZIP</button>
+          <button class="btn btn-ghost btn-danger" id="clearQueueBtn">Clear queue</button>
+          <div class="queue-list" id="queueList"></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <span id="status" aria-live="polite">Ready</span>
+    <div class="progress-wrap" id="progressWrap"><div class="bar" id="progressBar"></div></div>
+    <span id="progressText"></span>
+  </footer>
+
+  <script>
+    'use strict';
+
+    const CONFIG_VERSION = 2;
+    const STORE_KEY = 'waveshare-epaper-converter-v1';
+
+    const DEFAULT_CONTROLS = {
+      brightness: 108, contrast: 115, saturation: 140, vibrance: 125,
+      gamma: 0.92, shadowLift: 15, highlightCompression: 10
+    };
+    const CONTROL_META = [
+      { key: 'brightness', label: 'Brightness', min: 50, max: 200, step: 1, unit: '%', toText: v => Math.round(v) + '%' },
+      { key: 'contrast', label: 'Contrast', min: 50, max: 200, step: 1, unit: '%', toText: v => Math.round(v) + '%' },
+      { key: 'saturation', label: 'Saturation', min: 0, max: 250, step: 1, unit: '%', toText: v => Math.round(v) + '%' },
+      { key: 'vibrance', label: 'Vibrance', min: 0, max: 250, step: 1, unit: '%', toText: v => Math.round(v) + '%' },
+      { key: 'gamma', label: 'Gamma', min: 0.1, max: 2.5, step: 0.01, unit: '', toText: v => v.toFixed(2) },
+      { key: 'shadowLift', label: 'Shadow Lift', min: 0, max: 100, step: 1, unit: '', toText: v => Math.round(v) },
+      { key: 'highlightCompression', label: 'Highlight Compression', min: 0, max: 100, step: 1, unit: '', toText: v => Math.round(v) }
+    ];
+
+    const BASE_PROFILES = {
+      photoB: {
+        id: 'photoB', name: 'Photo B (6 Colour)',
+        palette: [
+          { name: 'Black', rgb: [25, 30, 33] },
+          { name: 'White', rgb: [232, 232, 232] },
+          { name: 'Yellow', rgb: [239, 222, 68] },
+          { name: 'Red', rgb: [178, 19, 24] },
+          { name: 'Blue', rgb: [33, 87, 186] },
+          { name: 'Green', rgb: [18, 95, 32] }
+        ],
+        device: [
+          [0, 0, 0], [255, 255, 255], [255, 255, 0], [255, 0, 0], [0, 0, 255], [0, 255, 0]
+        ],
+        weights: { r: 0.30, g: 0.59, b: 0.11 },
+        match: 'weighted'
+      },
+      acep: {
+        id: 'acep', name: 'ACeP (7 Colour)',
+        palette: [
+          { name: 'Black', rgb: [0, 0, 0] },
+          { name: 'White', rgb: [255, 255, 255] },
+          { name: 'Green', rgb: [0, 255, 0] },
+          { name: 'Blue', rgb: [0, 0, 255] },
+          { name: 'Red', rgb: [255, 0, 0] },
+          { name: 'Yellow', rgb: [255, 255, 0] },
+          { name: 'Orange', rgb: [255, 128, 0] }
+        ],
+        device: [
+          [0, 0, 0], [255, 255, 255], [0, 255, 0], [0, 0, 255], [255, 0, 0], [255, 255, 0], [255, 128, 0]
+        ],
+        weights: { r: 0.30, g: 0.59, b: 0.11 },
+        match: 'weighted'
+      },
+      custom: {
+        id: 'custom', name: 'Custom',
+        palette: [
+          { name: 'Black', rgb: [25, 30, 33] },
+          { name: 'White', rgb: [232, 232, 232] },
+          { name: 'Yellow', rgb: [239, 222, 68] },
+          { name: 'Red', rgb: [178, 19, 24] },
+          { name: 'Blue', rgb: [33, 87, 186] },
+          { name: 'Green', rgb: [18, 95, 32] }
+        ],
+        device: [
+          [0, 0, 0], [255, 255, 255], [255, 255, 0], [255, 0, 0], [0, 0, 255], [0, 255, 0]
+        ],
+        weights: { r: 0.30, g: 0.59, b: 0.11 },
+        match: 'weighted'
+      }
+    };
+
+    const DITHER_DEFAULTS = { algorithm: 'floyd', strength: 80, serpentine: true };
+
+    const PRESETS = {
+      natural: {
+        label: 'Natural Photo',
+        controls: { brightness: 100, contrast: 100, saturation: 100, vibrance: 100, gamma: 1.0, shadowLift: 0, highlightCompression: 0 }
+      },
+      portrait: {
+        label: 'Portrait',
+        controls: { brightness: 105, contrast: 108, saturation: 120, vibrance: 115, gamma: 0.95, shadowLift: 8, highlightCompression: 6 }
+      },
+      landscape: {
+        label: 'Landscape',
+        controls: { brightness: 110, contrast: 118, saturation: 145, vibrance: 130, gamma: 0.9, shadowLift: 12, highlightCompression: 8 }
+      },
+      artwork: {
+        label: 'Artwork',
+        controls: { brightness: 100, contrast: 105, saturation: 135, vibrance: 120, gamma: 1.0, shadowLift: 5, highlightCompression: 5 }
+      },
+      vintage: {
+        label: 'Vintage',
+        controls: { brightness: 95, contrast: 90, saturation: 75, vibrance: 85, gamma: 1.05, shadowLift: 18, highlightCompression: 12 }
+      },
+      highDetail: {
+        label: 'High Detail',
+        controls: { brightness: 105, contrast: 125, saturation: 110, vibrance: 110, gamma: 0.92, shadowLift: 10, highlightCompression: 15 }
+      },
+      highColor: {
+        label: 'High Colour',
+        controls: { brightness: 108, contrast: 112, saturation: 165, vibrance: 145, gamma: 0.95, shadowLift: 10, highlightCompression: 6 }
+      }
+    };
+
+    const DITHER_KERNELS = {
+      floyd: { div: 16, taps: [[1,0,7],[-1,1,3],[0,1,5],[1,1,1]] },
+      atkinson: { div: 8, taps: [[1,0,1],[2,0,1],[-1,1,1],[0,1,1],[1,1,1],[0,2,1]] },
+      jarvis: { div: 48, taps: [[1,0,7],[2,0,5],[-2,1,3],[-1,1,5],[0,1,7],[1,1,5],[2,1,3],[-2,2,1],[-1,2,3],[0,2,5],[1,2,3],[2,2,1]] },
+      sierra: { div: 32, taps: [[1,0,5],[2,0,3],[-2,1,2],[-1,1,4],[0,1,5],[1,1,4],[2,1,2],[-1,2,2],[0,2,3],[1,2,2]] },
+      stucki: { div: 42, taps: [[1,0,8],[2,0,4],[-2,1,2],[-1,1,4],[0,1,8],[1,1,4],[2,1,2],[-2,2,1],[-1,2,2],[0,2,4],[1,2,2],[2,2,1]] }
+    };
+
+    const DEFAULTS = {
+      profileId: 'photoB',
+      theme: 'dark',
+      controls: { ...DEFAULT_CONTROLS },
+      dither: { ...DITHER_DEFAULTS },
+      format: 'bmp',
+      orientation: 'portrait',
+      width: 480,
+      height: 800,
+      presetId: ''
+    };
+
+    // -- Magic numbers extracted to named constants --
+    const BMP_HEADER_SIZE = 54;
+    const BMP_DIB_HEADER_SIZE = 40;
+    const BMP_BPP = 24;
+    const BMP_DPI = 2835;
+    const ZIP_LOCAL_HEADER_SIZE = 30;
+    const ZIP_CENTRAL_HEADER_SIZE = 46;
+    const ZIP_EOCD_SIZE = 22;
+    const ZIP_VERSION = 20;
+    const ZIP_FLAGS = 0x0800;
+    const DEFAULT_BIAS = 100;
+    const MIN_CROP_SIZE = 20;
+    const MIN_SELECTION_AREA = 2;
+    const HISTOGRAM_BINS = 64;
+    const CACHE_SIZE_LIMIT = 4096;
+
+    const STATE = {
+      sourceImage: null,
+      originalFileName: 'image',
+      cropRect: { x: 0, y: 0, w: 0, h: 0 },
+      dragging: null,
+      dragStart: { x: 0, y: 0 },
+      cropStartRect: null,
+      settings: JSON.parse(JSON.stringify(DEFAULTS)),
+      profiles: JSON.parse(JSON.stringify(BASE_PROFILES)),
+      biases: {},
+      finalImageData: null,
+      targetW: 0,
+      targetH: 0,
+      queue: [],
+      queueSeq: 0,
+      busy: false
+    };
+
+    function clone(x) { return JSON.parse(JSON.stringify(x)); }
+
+    /** Clamp a number to [min, max]. */
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+    /** Convert a 0..1 float channel to an 0..255 byte. */
+    function floatToByte(v) { return Math.round(clamp(v, 0, 1) * 255); }
+
+    /** Convert a 0..255 byte channel to a 0..1 float. */
+    function byteToFloat(v) { return v / 255; }
+
+    function rgbToHex([r, g, b]) {
+      return '#' + [r, g, b].map(v => clamp(Math.round(v), 0, 255).toString(16).padStart(2, '0')).join('');
+    }
+    function hexToRgb(hex) {
+      const h = hex.replace('#', '');
+      return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+    }
+
+    function currentProfile() { return STATE.profiles[STATE.settings.profileId]; }
+    function profileBiases(profileId) {
+      const key = profileId || STATE.settings.profileId;
+      if (!STATE.biases[key]) {
+        const p = STATE.profiles[key];
+        const b = {};
+        p.palette.forEach(c => { b[c.name] = DEFAULT_BIAS; });
+        STATE.biases[key] = b;
+      }
+      return STATE.biases[key];
+    }
+
+    const $ = id => document.getElementById(id);
+    const UI = {
+      profileSelect: $('profileSelect'), presetSelect: $('presetSelect'), resetBtn: $('resetBtn'), themeBtn: $('themeBtn'),
+      dropZone: $('emptyState'), changeImageBtn: $('changeImageBtn'), fileInput: $('fileInput'), imageInfo: $('imageInfo'),
+      orientation: $('orientation'), widthInput: $('widthInput'), heightInput: $('heightInput'),
+      adjustControls: $('adjustControls'), paletteList: $('paletteList'),
+      ditherAlgorithm: $('ditherAlgorithm'), ditherStrength: $('ditherStrength'), ditherStrengthVal: $('ditherStrengthVal'), ditherSerpentine: $('ditherSerpentine'),
+      outputFormat: $('outputFormat'), downloadBtn: $('downloadBtn'),
+      exportSettingsBtn: $('exportSettingsBtn'), importSettingsBtn: $('importSettingsBtn'), settingsFile: $('settingsFile'),
+      emptyState: $('emptyState'), previewGrid: $('previewGrid'), originalImg: $('originalImg'),
+      cropOverlay: $('cropOverlay'), cropSelection: $('cropSelection'), cropMove: $('cropMove'),
+      dimTop: $('dimTop'), dimLeft: $('dimLeft'), dimRight: $('dimRight'), dimBottom: $('dimBottom'),
+      enhancedPreview: $('enhancedPreview'), finalPreview: $('finalPreview'),
+      compareTop: $('compareTop'), compareToggle: $('compareToggle'), compareSlider: $('compareSlider'),
+      histogramCanvas: $('histogramCanvas'), histogramInfo: $('histogramInfo'), paletteUsage: $('paletteUsage'),
+      addFilesBtn: $('addFilesBtn'), batchInput: $('batchInput'), convertSelectedBtn: $('convertSelectedBtn'),
+      convertAllBtn: $('convertAllBtn'), downloadZipBtn: $('downloadZipBtn'), clearQueueBtn: $('clearQueueBtn'), queueList: $('queueList'),
+      status: $('status'), progressWrap: $('progressWrap'), progressBar: $('progressBar'), progressText: $('progressText')
+    };
+
+    const cropCanvas = document.createElement('canvas');
+    const cropCtx = cropCanvas.getContext('2d');
+    const resizeCanvas = document.createElement('canvas');
+    const resizeCtx = resizeCanvas.getContext('2d');
+    let workBuffer = null;
+
+    function ensureWorkBuffer(w, h) {
+      const need = w * h * 3;
+      if (!workBuffer || workBuffer.length < need) workBuffer = new Float32Array(need);
+      return workBuffer;
+    }
+
+    function setStatus(msg) { UI.status.textContent = msg; }
+    function setProgress(pct, text) {
+      if (pct === null) { UI.progressWrap.style.display = 'none'; UI.progressText.textContent = ''; return; }
+      UI.progressWrap.style.display = 'block';
+      UI.progressBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      UI.progressText.textContent = text || '';
+    }
+
+    /**
+     * Apply brightness/contrast/gamma/colour adjustments to a Float32 work buffer
+     * (channels in 0..1, packed RGB, 3 values per pixel). Mutates `work` in place.
+     */
+    function applyAdjustments(work, w, h, c) {
+      const br = c.brightness / 100, co = c.contrast / 100;
+      const sa = c.saturation / 100, vib = c.vibrance / 100;
+      const ga = c.gamma, sl = c.shadowLift / 100, hc = c.highlightCompression / 100;
+      for (let i = 0; i < w * h * 3; i += 3) {
+        let r = work[i], g = work[i + 1], b = work[i + 2];
+        r *= br; g *= br; b *= br;
+        r = (r - 0.5) * co + 0.5; g = (g - 0.5) * co + 0.5; b = (b - 0.5) * co + 0.5;
+        if (r > 0) r = Math.pow(r, ga); else r = 0;
+        if (g > 0) g = Math.pow(g, ga); else g = 0;
+        if (b > 0) b = Math.pow(b, ga); else b = 0;
+        r += sl * Math.pow(1 - r, 3); g += sl * Math.pow(1 - g, 3); b += sl * Math.pow(1 - b, 3);
+        r -= hc * Math.pow(r, 4); g -= hc * Math.pow(g, 4); b -= hc * Math.pow(b, 4);
+        const lum = r * 0.2126 + g * 0.7152 + b * 0.0722;
+        r = lum + (r - lum) * sa; g = lum + (g - lum) * sa; b = lum + (b - lum) * sa;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        const psat = mx - mn;
+        const factor = 1 + (vib - 1) * (1 - psat);
+        const lum2 = r * 0.2126 + g * 0.7152 + b * 0.0722;
+        r = lum2 + (r - lum2) * factor; g = lum2 + (g - lum2) * factor; b = lum2 + (b - lum2) * factor;
+        work[i] = r > 1 ? 1 : r < 0 ? 0 : r;
+        work[i + 1] = g > 1 ? 1 : g < 0 ? 0 : g;
+        work[i + 2] = b > 1 ? 1 : b < 0 ? 0 : b;
+      }
+    }
+
+    /**
+     * Error-diffusion dithering in float space. Quantises each pixel to the closest
+     * palette colour (weighted-RGB with per-colour bias) and diffuses the error to
+     * neighbouring pixels using the given kernel. Mutates `work` in place.
+     */
+    function ditherFloat(work, w, h, profile, algorithm, strength, serpentine) {
+      const kernel = DITHER_KERNELS[algorithm] || DITHER_KERNELS.floyd;
+      const div = kernel.div;
+      const gain = strength / 100;
+      const pal = profile.palette;
+      const wt = profile.weights;
+      const biasMap = profileBiases(profile.id);
+      const cache = new Map();
+      for (let y = 0; y < h; y++) {
+        const ltr = !serpentine || (y % 2 === 0);
+        for (let x = 0; x < w; x++) {
+          const xx = ltr ? x : w - 1 - x;
+          const idx = (y * w + xx) * 3;
+          const or = work[idx], og = work[idx + 1], ob = work[idx + 2];
+          let newRgb = cache.get(Math.round(or*255) + ',' + Math.round(og*255) + ',' + Math.round(ob*255));
+          if (!newRgb) {
+            let bestIdx = 0, bestDist = Infinity;
+            for (let k = 0; k < pal.length; k++) {
+              const cr = pal[k].rgb[0]/255, cg = pal[k].rgb[1]/255, cb = pal[k].rgb[2]/255;
+              const dr = or-cr, dg = og-cg, db = ob-cb;
+              let dist = wt.r*dr*dr + wt.g*dg*dg + wt.b*db*db;
+              const bias = (biasMap[pal[k].name] || DEFAULT_BIAS) / 100;
+              if (bias > 0) dist = dist / bias;
+              if (dist < bestDist) { bestDist = dist; bestIdx = k; }
+            }
+            newRgb = pal[bestIdx].rgb;
+            if (cache.size < CACHE_SIZE_LIMIT) cache.set(Math.round(or*255) + ',' + Math.round(og*255) + ',' + Math.round(ob*255), newRgb);
+          }
+          const nr = newRgb[0]/255, ng = newRgb[1]/255, nb = newRgb[2]/255;
+          work[idx] = nr; work[idx+1] = ng; work[idx+2] = nb;
+          const er = or-nr, eg = og-ng, eb = ob-nb;
+          if (strength <= 0) continue;
+          for (let t = 0; t < kernel.taps.length; t++) {
+            let dx = kernel.taps[t][0], dy = kernel.taps[t][1], f = kernel.taps[t][2];
+            if (!ltr) dx = -dx;
+            const nx = xx + dx, ny = y + dy;
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+            const ni = (ny * w + nx) * 3;
+            work[ni] += er * f / div * gain;
+            work[ni+1] += eg * f / div * gain;
+            work[ni+2] += eb * f / div * gain;
+          }
+        }
+      }
+    }
+
+    /* ================= BMP / PNG / ZIP ================= */
+
+    /**
+     * Build a 24-bit BMP Blob from RGBA ImageData. Bottom-up rows, BGR byte order,
+     * each row padded to a 4-byte boundary. This format is what the device firmware
+     * expects; do not change the layout.
+     */
+    function generateBMP(imageData, width, height) {
+      const rowSize = Math.ceil((width * 3) / 4) * 4;
+      const pixelDataSize = rowSize * height;
+      const fileSize = BMP_HEADER_SIZE + pixelDataSize;
+      const buffer = new ArrayBuffer(fileSize);
+      const view = new DataView(buffer);
+      view.setUint8(0, 0x42); view.setUint8(1, 0x4D);
+      view.setUint32(2, fileSize, true);
+      view.setUint32(10, BMP_HEADER_SIZE, true);
+      view.setUint32(14, BMP_DIB_HEADER_SIZE, true);
+      view.setInt32(18, width, true);
+      view.setInt32(22, height, true);
+      view.setUint16(26, 1, true);
+      view.setUint16(28, BMP_BPP, true);
+      view.setUint32(34, pixelDataSize, true);
+      view.setUint32(38, BMP_DPI, true);
+      view.setUint32(42, BMP_DPI, true);
+      const data = imageData.data;
+      for (let y = 0; y < height; y++) {
+        const destRow = height - 1 - y;
+        for (let x = 0; x < width; x++) {
+          const srcIdx = (y * width + x) * 4;
+          const destIdx = BMP_HEADER_SIZE + destRow * rowSize + x * 3;
+          view.setUint8(destIdx, data[srcIdx + 2]);
+          view.setUint8(destIdx + 1, data[srcIdx + 1]);
+          view.setUint8(destIdx + 2, data[srcIdx]);
+        }
+      }
+      return new Blob([buffer], { type: 'image/bmp' });
+    }
+
+    function imageDataToCanvas(imgData, w, h) {
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      cv.getContext('2d').putImageData(imgData, 0, 0);
+      return cv;
+    }
+    function blobFromImageData(imgData, w, h, format) {
+      if (format === 'png') {
+        const cv = imageDataToCanvas(imgData, w, h);
+        return new Promise(resolve => cv.toBlob(resolve, 'image/png'));
+      }
+      return Promise.resolve(generateBMP(imgData, w, h));
+    }
+
+    /**
+     * Map an RGBA ImageData to the profile's *device* palette. The preview uses the
+     * Real World palette; the exported file must only contain byte-exact device
+     * colours, so this runs immediately before export. Matches on integer RGB
+     * distance (no weights/bias — the device table is exact).
+     */
+    function toDeviceImage(imgData, profile) {
+      const dev = profile.device;
+      if (!dev || !dev.length) return imgData;
+      const pal = profile.palette;
+      const w = imgData.width, h = imgData.height;
+      const out = new ImageData(w, h);
+      const d = imgData.data, od = out.data;
+      for (let i = 0; i < d.length; i += 4) {
+        let bestIdx = 0, bestDist = Infinity;
+        for (let k = 0; k < pal.length; k++) {
+          const dr = d[i] - pal[k].rgb[0], dg = d[i+1] - pal[k].rgb[1], db = d[i+2] - pal[k].rgb[2];
+          const dist = dr*dr + dg*dg + db*db;
+          if (dist < bestDist) { bestDist = dist; bestIdx = k; }
+        }
+        const devC = dev[bestIdx];
+        od[i] = devC[0]; od[i+1] = devC[1]; od[i+2] = devC[2]; od[i+3] = 255;
+      }
+      return out;
+    }
+
+    const CRC_TABLE = (() => {
+      const t = new Uint32Array(256);
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        t[n] = c >>> 0;
+      }
+      return t;
+    })();
+    function crc32(bytes) {
+      let c = 0xFFFFFFFF;
+      for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+      return (c ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function dosDateTime(d) {
+      const year = Math.max(1980, d.getFullYear()) - 1980;
+      const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+      const date = (year << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+      return [time & 0xFFFF, date & 0xFFFF];
+    }
+
+    /**
+     * Hand-rolled stored (uncompressed) ZIP builder. Produces a self-contained Blob
+     * with no external dependencies.
+     * @param {Array<{name: string, blob: Blob}>} entries
+     * @returns {Promise<Blob>}
+     */
+    async function makeZip(entries) {
+      const enc = new TextEncoder();
+      const parts = [];
+      const central = [];
+      let offset = 0;
+      const now = new Date();
+      const [modTime, modDate] = dosDateTime(now);
+      for (const e of entries) {
+        const nameBytes = enc.encode(e.name);
+        const data = new Uint8Array(await e.blob.arrayBuffer());
+        const crc = crc32(data);
+        const local = new DataView(new ArrayBuffer(ZIP_LOCAL_HEADER_SIZE));
+        local.setUint32(0, 0x04034b50, true);
+        local.setUint16(4, ZIP_VERSION, true);
+        local.setUint16(6, ZIP_FLAGS, true);
+        local.setUint16(8, 0, true);
+        local.setUint16(10, modTime, true);
+        local.setUint16(12, modDate, true);
+        local.setUint32(14, crc, true);
+        local.setUint32(18, data.length, true);
+        local.setUint32(22, data.length, true);
+        local.setUint16(26, nameBytes.length, true);
+        local.setUint16(28, 0, true);
+        parts.push(local.buffer, nameBytes.buffer, data.buffer);
+        const cd = new DataView(new ArrayBuffer(ZIP_CENTRAL_HEADER_SIZE));
+        cd.setUint32(0, 0x02014b50, true);
+        cd.setUint16(4, ZIP_VERSION, true);
+        cd.setUint16(6, ZIP_VERSION, true);
+        cd.setUint16(8, ZIP_FLAGS, true);
+        cd.setUint16(10, 0, true);
+        cd.setUint16(12, modTime, true);
+        cd.setUint16(14, modDate, true);
+        cd.setUint32(16, crc, true);
+        cd.setUint32(20, data.length, true);
+        cd.setUint32(24, data.length, true);
+        cd.setUint16(28, nameBytes.length, true);
+        cd.setUint32(42, offset, true);
+        central.push({ buffer: cd.buffer, name: nameBytes });
+        offset += ZIP_LOCAL_HEADER_SIZE + nameBytes.length + data.length;
+      }
+      const centralSize = central.reduce((s, c) => s + ZIP_CENTRAL_HEADER_SIZE + c.name.length, 0);
+      for (const c of central) parts.push(c.buffer, c.name.buffer);
+      const eocd = new DataView(new ArrayBuffer(ZIP_EOCD_SIZE));
+      eocd.setUint32(0, 0x06054b50, true);
+      eocd.setUint16(8, central.length, true);
+      eocd.setUint16(10, central.length, true);
+      eocd.setUint32(12, centralSize, true);
+      eocd.setUint32(16, offset, true);
+      parts.push(eocd.buffer);
+      return new Blob(parts, { type: 'application/zip' });
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    /* ================= Crop logic ================= */
+    /* ==== Utility Functions ==== */
+
+    /**
+     * Returns the target dimensions from the UI, applying defaults.
+     * Centralises parsing of width/height inputs.
+     */
+    function getTargetSize() {
+      const w = parseInt(UI.widthInput.value) || DEFAULTS.width;
+      const h = parseInt(UI.heightInput.value) || DEFAULTS.height;
+      return { w, h };
+    }
+
+    /**
+     * Returns the target aspect ratio based on current UI size.
+     */
+    function getTargetAspect() {
+      const { w, h } = getTargetSize();
+      return w / h;
+    }
+
+    /**
+     * Prepare an ImageData by cropping the source image to `crop` rect
+     * and resizing it to the target dimensions.
+     * Re-uses the internal canvases to avoid duplication between the
+     * single-image pipeline and the batch processing code.
+     */
+    function prepareImage(sourceImg, crop, targetW, targetH) {
+      // Crop
+      cropCanvas.width = crop.x2 - crop.x1;
+      cropCanvas.height = crop.y2 - crop.y1;
+      cropCtx.drawImage(
+        sourceImg,
+        crop.x1,
+        crop.y1,
+        crop.x2 - crop.x1,
+        crop.y2 - crop.y1,
+        0,
+        0,
+        cropCanvas.width,
+        cropCanvas.height
+      );
+      // Resize
+      resizeCanvas.width = targetW;
+      resizeCanvas.height = targetH;
+      resizeCtx.imageSmoothingEnabled = true;
+      resizeCtx.imageSmoothingQuality = 'high';
+      resizeCtx.drawImage(
+        cropCanvas,
+        0,
+        0,
+        cropCanvas.width,
+        cropCanvas.height,
+        0,
+        0,
+        targetW,
+        targetH
+      );
+      return resizeCtx.getImageData(0, 0, targetW, targetH);
+    }
+
+    function initCropRect() {
+      const dispW = UI.originalImg.clientWidth;
+      const dispH = UI.originalImg.clientHeight;
+      if (!dispW || !dispH) return;
+      const aspect = getTargetAspect();
+      let w, h;
+      if (dispW / dispH > aspect) { h = dispH; w = h * aspect; }
+      else { w = dispW; h = w / aspect; }
+      STATE.cropRect = { x: (dispW - w) / 2, y: (dispH - h) / 2, w: w, h: h };
+      UI.cropSelection.classList.remove('hidden');
+      updateCropOverlay();
+    }
+
+    function getOverlayPos(e) {
+      const rect = UI.cropOverlay.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: Math.max(0, Math.min(clientX - rect.left, rect.width)),
+        y: Math.max(0, Math.min(clientY - rect.top, rect.height))
+      };
+    }
+
+    function onCropStart(e) {
+      if (!STATE.sourceImage) return;
+      e.preventDefault();
+      const pos = getOverlayPos(e);
+      const handle = e.target.dataset ? e.target.dataset.handle : undefined;
+      if (handle) STATE.dragging = handle;
+      else if (e.target.id === 'cropMove') STATE.dragging = 'move';
+      else return;
+      STATE.dragStart = pos;
+      STATE.cropStartRect = { ...STATE.cropRect };
+      document.addEventListener('mousemove', onCropDrag);
+      document.addEventListener('mouseup', onCropEnd);
+      document.addEventListener('touchmove', onCropDrag, { passive: false });
+      document.addEventListener('touchend', onCropEnd);
+    }
+
+    function onCropDrag(e) {
+      if (!STATE.dragging) return;
+      e.preventDefault();
+      const pos = getOverlayPos(e);
+      const maxW = UI.originalImg.clientWidth;
+      const maxH = UI.originalImg.clientHeight;
+      const dx = pos.x - STATE.dragStart.x;
+      const dy = pos.y - STATE.dragStart.y;
+      const s = STATE.cropStartRect;
+      const aspect = getTargetAspect();
+
+      if (STATE.dragging === 'move') {
+        const nx = Math.max(0, Math.min(s.x + dx, maxW - s.w));
+        const ny = Math.max(0, Math.min(s.y + dy, maxH - s.h));
+        STATE.cropRect = { x: nx, y: ny, w: s.w, h: s.h };
+      } else {
+        let ax, ay;
+        if (STATE.dragging === 'tl') { ax = s.x + s.w; ay = s.y + s.h; }
+        else if (STATE.dragging === 'tr') { ax = s.x; ay = s.y + s.h; }
+        else if (STATE.dragging === 'bl') { ax = s.x + s.w; ay = s.y; }
+        else { ax = s.x; ay = s.y; }
+        let newW = Math.abs(pos.x - ax);
+        let newH = newW / aspect;
+        const hFromY = Math.abs(pos.y - ay);
+        const wFromH = hFromY * aspect;
+        if (newW >= wFromH) {
+          if (newH > maxH) { newH = maxH; newW = newH * aspect; }
+        } else {
+          newW = wFromH; newH = hFromY;
+        }
+        if (newH > maxH) { newH = maxH; newW = newH * aspect; }
+        if (newW > maxW) { newW = maxW; newH = newW / aspect; }
+        if (newW < MIN_CROP_SIZE) { newW = MIN_CROP_SIZE; newH = newW / aspect; }
+        let nx = STATE.dragging.includes('l') ? ax - newW : ax;
+        let ny = STATE.dragging.includes('t') ? ay - newH : ay;
+        if (nx < 0) { nx = 0; newW = ax; newH = newW / aspect; }
+        if (ny < 0) { ny = 0; newH = ay; newW = newH * aspect; }
+        if (nx + newW > maxW) { newW = maxW - nx; newH = newW / aspect; }
+        if (ny + newH > maxH) { newH = maxH - ny; newW = newH * aspect; }
+        STATE.cropRect = { x: nx, y: ny, w: newW, h: newH };
+      }
+      updateCropOverlay();
+      scheduleRender();
+    }
+
+    function onCropEnd() {
+      STATE.dragging = null;
+      document.removeEventListener('mousemove', onCropDrag);
+      document.removeEventListener('mouseup', onCropEnd);
+      document.removeEventListener('touchmove', onCropDrag);
+      document.removeEventListener('touchend', onCropEnd);
+    }
+
+    function updateCropOverlay() {
+      const r = STATE.cropRect;
+      const sel = UI.cropSelection;
+      if (r.w < MIN_SELECTION_AREA || r.h < MIN_SELECTION_AREA) { sel.classList.add('hidden'); return; }
+      sel.classList.remove('hidden');
+      sel.style.left = r.x + 'px'; sel.style.top = r.y + 'px';
+      sel.style.width = r.w + 'px'; sel.style.height = r.h + 'px';
+      UI.dimTop.style.cssText = `top:0;left:0;right:0;height:${r.y}px`;
+      UI.dimBottom.style.cssText = `bottom:0;left:0;right:0;top:${r.y + r.h}px`;
+      UI.dimLeft.style.cssText = `top:${r.y}px;left:0;width:${r.x}px;height:${r.h}px`;
+      UI.dimRight.style.cssText = `top:${r.y}px;right:0;left:${r.x + r.w}px;height:${r.h}px`;
+    }
+
+    function getCropInImageCoords() {
+      const dispW = UI.originalImg.clientWidth || 1;
+      const dispH = UI.originalImg.clientHeight || 1;
+      const imgW = STATE.sourceImage.naturalWidth;
+      const imgH = STATE.sourceImage.naturalHeight;
+      const scaleX = imgW / dispW;
+      const scaleY = imgH / dispH;
+      return {
+        x1: Math.round(STATE.cropRect.x * scaleX),
+        y1: Math.round(STATE.cropRect.y * scaleY),
+        x2: Math.round((STATE.cropRect.x + STATE.cropRect.w) * scaleX),
+        y2: Math.round((STATE.cropRect.y + STATE.cropRect.h) * scaleY)
+      };
+    }
+
+    /* ================= Pipeline ================= */
+    function renderToPanels(enhancedImg, finalImg, w, h) {
+      UI.enhancedPreview.width = w;
+      UI.enhancedPreview.height = h;
+      UI.enhancedPreview.getContext('2d').putImageData(enhancedImg, 0, 0);
+      UI.finalPreview.width = w;
+      UI.finalPreview.height = h;
+      UI.finalPreview.getContext('2d').putImageData(finalImg, 0, 0);
+      UI.compareTop.width = w;
+      UI.compareTop.height = h;
+      UI.compareTop.getContext('2d').putImageData(enhancedImg, 0, 0);
+    }
+
+    function runPipeline() {
+      if (!STATE.sourceImage) return;
+      const { w: targetW, h: targetH } = getTargetSize();
+      const crop = getCropInImageCoords();
+      const cw = crop.x2 - crop.x1, ch = crop.y2 - crop.y1;
+      if (cw < 1 || ch < 1) return;
+
+      const baseImg = prepareImage(STATE.sourceImage, crop, targetW, targetH);
+
+      const work = ensureWorkBuffer(targetW, targetH);
+      const data = baseImg.data;
+      for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
+        work[j] = data[i] / 255;
+        work[j + 1] = data[i + 1] / 255;
+        work[j + 2] = data[i + 2] / 255;
+      }
+
+      const profile = currentProfile();
+      const settings = STATE.settings;
+
+      applyAdjustments(work, targetW, targetH, settings.controls);
+
+      const enhancedImg = new ImageData(targetW, targetH);
+      const ed = enhancedImg.data;
+      for (let i = 0, j = 0; i < ed.length; i += 4, j += 3) {
+        ed[i] = Math.round(work[j] * 255);
+        ed[i + 1] = Math.round(work[j + 1] * 255);
+        ed[i + 2] = Math.round(work[j + 2] * 255);
+        ed[i + 3] = 255;
+      }
+
+      ditherFloat(work, targetW, targetH, profile, settings.dither.algorithm, settings.dither.strength, settings.dither.serpentine);
+
+      const finalImg = new ImageData(targetW, targetH);
+      const fd = finalImg.data;
+      for (let i = 0, j = 0; i < fd.length; i += 4, j += 3) {
+        fd[i] = Math.max(0, Math.min(255, Math.round(work[j] * 255)));
+        fd[i + 1] = Math.max(0, Math.min(255, Math.round(work[j + 1] * 255)));
+        fd[i + 2] = Math.max(0, Math.min(255, Math.round(work[j + 2] * 255)));
+        fd[i + 3] = 255;
+      }
+
+      renderToPanels(enhancedImg, finalImg, targetW, targetH);
+      STATE.finalImageData = toDeviceImage(finalImg, profile);
+      STATE.targetW = targetW;
+      STATE.targetH = targetH;
+      updateHistogram(enhancedImg);
+      updatePaletteUsage(finalImg, targetW, targetH);
+      UI.downloadBtn.disabled = false;
+    }
+
+    let renderPending = false;
+    function scheduleRender() {
+      if (renderPending) return;
+      renderPending = true;
+      requestAnimationFrame(() => { renderPending = false; runPipeline(); });
+    }
+
+    /* ================= Histogram ================= */
+    function updateHistogram(imgData) {
+      const cv = UI.histogramCanvas;
+      const ctx = cv.getContext('2d');
+      const d = imgData.data;
+      const bins = HISTOGRAM_BINS;
+      const hist = new Array(bins).fill(0);
+      for (let i = 0; i < d.length; i += 4) {
+        const lum = (d[i] * 0.2126 + d[i+1] * 0.7152 + d[i+2] * 0.0722) / 255;
+        hist[Math.min(bins - 1, Math.floor(lum * bins))]++;
+      }
+      let max = 1;
+      for (const v of hist) if (v > max) max = v;
+      const W = cv.width, H = cv.height;
+      ctx.fillStyle = 'rgba(0,0,0,0)';
+      ctx.clearRect(0, 0, W, H);
+      const bw = W / bins;
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e8a13c';
+      ctx.fillStyle = accent;
+      for (let i = 0; i < bins; i++) {
+        const bh = (hist[i] / max) * (H - 2);
+        ctx.fillRect(i * bw, H - bh, Math.max(1, bw - 1), bh);
+      }
+    }
+
+    /* ================= Palette usage ================= */
+    function updatePaletteUsage(imgData, w, h) {
+      const profile = currentProfile();
+      const d = imgData.data;
+      const counts = new Array(profile.palette.length).fill(0);
+      const pal = profile.palette;
+      const wt = profile.weights;
+      const total = w * h;
+      for (let p = 0; p < total; p++) {
+        const r = d[p*4]/255, g = d[p*4+1]/255, b = d[p*4+2]/255;
+        let bestIdx = 0, bestDist = Infinity;
+        for (let k = 0; k < pal.length; k++) {
+          const cr = pal[k].rgb[0]/255, cg = pal[k].rgb[1]/255, cb = pal[k].rgb[2]/255;
+          const dr = r-cr, dg = g-cg, db = b-cb;
+          const dist = wt.r*dr*dr + wt.g*dg*dg + wt.b*db*db;
+          if (dist < bestDist) { bestDist = dist; bestIdx = k; }
+        }
+        counts[bestIdx]++;
+      }
+      UI.paletteUsage.innerHTML = '';
+      let html = '';
+      for (let k = 0; k < pal.length; k++) {
+        const pct = (counts[k] / total * 100);
+        html += `<div class="usage-row">
+          <span class="u-swatch" style="background:${rgbToHex(pal[k].rgb)}"></span>
+          <span class="u-name">${pal[k].name}</span>
+          <div class="usage-bar-bg"><div class="usage-bar" style="width:${pct}%;background:${rgbToHex(pal[k].rgb)}"></div></div>
+          <span class="u-pct">${pct.toFixed(1)}%</span>
+        </div>`;
+      }
+      UI.paletteUsage.innerHTML = html;
+    }
+
+    /* ================= Image loading ================= */
+    function loadImage(file) {
+      if (!file.type.startsWith('image/')) { setStatus('Unsupported file type.'); return; }
+      STATE.originalFileName = file.name;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          STATE.sourceImage = img;
+          UI.originalImg.src = img.src;
+          if (img.width > img.height) {
+            UI.orientation.value = 'landscape';
+            UI.widthInput.value = 800; UI.heightInput.value = 480;
+          } else {
+            UI.orientation.value = 'portrait';
+            UI.widthInput.value = 480; UI.heightInput.value = 800;
+          }
+          UI.emptyState.classList.add('hidden');
+          UI.previewGrid.classList.remove('hidden');
+          UI.downloadBtn.disabled = true;
+          UI.imageInfo.textContent = `Loaded: ${img.width} x ${img.height}`;
+          setStatus(`Loaded ${STATE.originalFileName}`);
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            initCropRect();
+            runPipeline();
+          }));
+        };
+        img.onerror = () => setStatus('Could not decode image.');
+        img.src = reader.result;
+      };
+      reader.onerror = () => setStatus('Could not read file.');
+      reader.readAsDataURL(file);
+    }
+
+    /* ================= UI construction ================= */
+    function buildProfileSelect() {
+      UI.profileSelect.innerHTML = '';
+      for (const id of Object.keys(STATE.profiles)) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = STATE.profiles[id].name;
+        UI.profileSelect.appendChild(opt);
+      }
+      UI.profileSelect.value = STATE.settings.profileId;
+    }
+
+    function buildPresetSelect() {
+      UI.presetSelect.innerHTML = '<option value="">Custom</option>';
+      for (const id of Object.keys(PRESETS)) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = PRESETS[id].label;
+        UI.presetSelect.appendChild(opt);
+      }
+      UI.presetSelect.value = STATE.settings.presetId || '';
+    }
+
+    function buildAdjustControls() {
+      UI.adjustControls.innerHTML = '';
+      for (const meta of CONTROL_META) {
+        const wrap = document.createElement('div');
+        wrap.className = 'ctl';
+        wrap.innerHTML = `
+          <div class="head">
+            <span class="name">${meta.label}</span>
+            <span class="value" id="adjVal_${meta.key}">${meta.toText(DEFAULT_CONTROLS[meta.key])}</span>
+            <button class="reset" data-reset="ctl_${meta.key}" title="Reset to default">&#8634;</button>
+          </div>
+          <input type="range" id="ctl_${meta.key}" min="${meta.min}" max="${meta.max}" step="${meta.step}" value="${DEFAULT_CONTROLS[meta.key]}">`;
+        UI.adjustControls.appendChild(wrap);
+        const slider = wrap.querySelector(`#ctl_${meta.key}`);
+        const valSpan = wrap.querySelector(`#adjVal_${meta.key}`);
+        const rbtn = wrap.querySelector('.reset');
+        slider.addEventListener('input', () => {
+          STATE.settings.controls[meta.key] = parseFloat(slider.value);
+          valSpan.textContent = meta.toText(parseFloat(slider.value));
+          markCustomPreset();
+          saveSettings();
+          scheduleRender();
+        });
+        rbtn.addEventListener('click', () => {
+          STATE.settings.controls[meta.key] = DEFAULT_CONTROLS[meta.key];
+          syncAdjustControls();
+          saveSettings();
+          scheduleRender();
+        });
+      }
+    }
+
+    function syncAdjustControls() {
+      for (const meta of CONTROL_META) {
+        const slider = $(`ctl_${meta.key}`);
+        const valSpan = $(`adjVal_${meta.key}`);
+        if (slider) {
+          slider.value = STATE.settings.controls[meta.key];
+          valSpan.textContent = meta.toText(parseFloat(STATE.settings.controls[meta.key]));
+        }
+      }
+      UI.ditherStrength.value = STATE.settings.dither.strength;
+      UI.ditherStrengthVal.textContent = STATE.settings.dither.strength + '%';
+      UI.ditherAlgorithm.value = STATE.settings.dither.algorithm;
+      UI.ditherSerpentine.checked = STATE.settings.dither.serpentine;
+    }
+
+    function buildPaletteList() {
+      UI.paletteList.innerHTML = '';
+      const profile = currentProfile();
+      const biases = profileBiases(profile.id);
+      profile.palette.forEach((color, idx) => {
+        const row = document.createElement('div');
+        row.className = 'swatch-row';
+        const biasVal = biases[color.name] != null ? biases[color.name] : DEFAULT_BIAS;
+        row.innerHTML = `
+          <span class="swatch" style="background:${rgbToHex(color.rgb)}" title="Click swatch to recalibrate">
+            <input type="color" value="${rgbToHex(color.rgb)}">
+          </span>
+          <span class="name">${color.name}</span>
+          <div class="bias">
+            <input type="range" min="20" max="300" step="1" value="${biasVal}" data-bias="${color.name}" title="${color.name} bias">
+          </div>
+          <span class="val" data-palette-val="${color.name}">${biasVal}</span>
+          <button class="reset" data-palette-reset="${color.name}" title="Reset ${color.name} to default">&#8634;</button>`;
+        UI.paletteList.appendChild(row);
+        const colorInput = row.querySelector('input[type="color"]');
+        colorInput.addEventListener('input', () => {
+          color.rgb = hexToRgb(colorInput.value);
+          row.querySelector('.swatch').style.background = rgbToHex(color.rgb);
+          markCustomPreset();
+          saveSettings();
+          scheduleRender();
+        });
+        colorInput.addEventListener('click', e => e.stopPropagation());
+        const slider = row.querySelector('.bias input');
+        const valSpan = row.querySelector('[data-palette-val]');
+        slider.addEventListener('input', () => {
+          biases[color.name] = parseInt(slider.value, 10);
+          valSpan.textContent = slider.value;
+          markCustomPreset();
+          saveSettings();
+          scheduleRender();
+        });
+        row.querySelector('.reset').addEventListener('click', e => {
+          e.stopPropagation();
+          const base = BASE_PROFILES[profile.id] || BASE_PROFILES.photoB;
+          const baseColor = base.palette[idx];
+          if (baseColor) {
+            color.rgb = [...baseColor.rgb];
+            colorInput.value = rgbToHex(color.rgb);
+            row.querySelector('.swatch').style.background = rgbToHex(color.rgb);
+          }
+          biases[color.name] = DEFAULT_BIAS;
+          slider.value = DEFAULT_BIAS;
+          valSpan.textContent = DEFAULT_BIAS;
+          markCustomPreset();
+          saveSettings();
+          scheduleRender();
+        });
+      });
+    }
+
+    function markCustomPreset() {
+      UI.presetSelect.value = '';
+      STATE.settings.presetId = '';
+    }
+
+    /* ================= Queue ================= */
+    function addToQueue(files) {
+      for (const file of files) {
+        if (!file.type.startsWith('image/')) continue;
+        const id = ++STATE.queueSeq;
+        STATE.queue.push({ id, file, status: 'pending', blob: null, error: null });
+      }
+      renderQueue();
+    }
+
+    function renderQueue() {
+      UI.queueList.innerHTML = '';
+      for (const item of STATE.queue) {
+        const row = document.createElement('div');
+        row.className = 'queue-item';
+        const stClass = item.status === 'done' ? 'done' : item.status === 'error' ? 'error' : '';
+        const statusText = item.status === 'done' ? 'done' : item.status === 'error' ? (item.error || 'error') : 'pending';
+        row.innerHTML = `
+          <input type="checkbox" class="q-check" data-id="${item.id}" ${item.status === 'pending' ? '' : 'disabled'}>
+          <span class="q-name" title="${item.file.name}">${item.file.name}</span>
+          <span class="q-status ${stClass}">${statusText}</span>
+          ${item.status === 'done' && item.blob ? `<a class="q-dl" href="#" data-dl="${item.id}">save</a>` : ''}`;
+        UI.queueList.appendChild(row);
+        if (item.status === 'done' && item.blob) {
+          row.querySelector(`[data-dl="${item.id}"]`).addEventListener('click', e => {
+            e.preventDefault();
+            downloadBlob(item.blob, item.file.name.replace(/\.[^.]+$/, '') + '.' + STATE.settings.format);
+          });
+        }
+      }
+      const pending = STATE.queue.filter(q => q.status === 'pending').length;
+      UI.convertAllBtn.disabled = pending === 0;
+      const done = STATE.queue.filter(q => q.status === 'done' && q.blob).length;
+      UI.downloadZipBtn.disabled = done === 0;
+    }
+
+    function selectedQueueItems() {
+      const checks = UI.queueList.querySelectorAll('.q-check:checked');
+      const ids = new Set(Array.from(checks).map(c => c.dataset.id));
+      return STATE.queue.filter(q => ids.has(String(q.id)));
+    }
+
+    async function convertQueueItem(item) {
+      item.status = 'processing';
+      renderQueue();
+      try {
+        const blob = await processFile(item.file, STATE.settings.controls, STATE.settings.dither, currentProfile(), STATE.settings.format);
+        item.blob = blob;
+        item.status = 'done';
+      } catch (err) {
+        item.error = err.message;
+        item.status = 'error';
+      }
+      renderQueue();
+    }
+
+    async function convertQueue(list) {
+      if (STATE.busy) return;
+      STATE.busy = true;
+      const items = list || STATE.queue.filter(q => q.status === 'pending');
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        setProgress(((i + 1) / items.length) * 100, `${i + 1}/${items.length} ${item.file.name}`);
+        setStatus(`Converting ${item.file.name}...`);
+        await convertQueueItem(item);
+      }
+      setProgress(null);
+      setStatus(items.length ? 'Queue conversion complete.' : 'Ready');
+      STATE.busy = false;
+    }
+
+    function processFile(file, controls, dither, profile, format) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const { w: targetW, h: targetH } = getTargetSize();
+              const aspect = targetW / targetH;
+              const iw = img.naturalWidth, ih = img.naturalHeight;
+              let cw, ch;
+              if (iw / ih > aspect) { ch = ih; cw = ch * aspect; }
+              else { cw = iw; ch = cw / aspect; }
+              const cx = Math.round((iw - cw) / 2);
+              const cy = Math.round((ih - ch) / 2);
+              const crop = { x1: cx, y1: cy, x2: Math.round(cx + cw), y2: Math.round(cy + ch) };
+              const base = prepareImage(img, crop, targetW, targetH);
+              const work = ensureWorkBuffer(targetW, targetH);
+              const d = base.data;
+              for (let i = 0, j = 0; i < d.length; i += 4, j += 3) {
+                work[j] = d[i] / 255; work[j+1] = d[i+1] / 255; work[j+2] = d[i+2] / 255;
+              }
+              applyAdjustments(work, targetW, targetH, controls);
+              ditherFloat(work, targetW, targetH, profile, dither.algorithm, dither.strength, dither.serpentine);
+              const out = new ImageData(targetW, targetH);
+              const od = out.data;
+              for (let i = 0, j = 0; i < od.length; i += 4, j += 3) {
+                od[i] = Math.max(0, Math.min(255, Math.round(work[j] * 255)));
+                od[i+1] = Math.max(0, Math.min(255, Math.round(work[j+1] * 255)));
+                od[i+2] = Math.max(0, Math.min(255, Math.round(work[j+2] * 255)));
+                od[i+3] = 255;
+              }
+              blobFromImageData(toDeviceImage(out, profile), targetW, targetH, format).then(resolve, reject);
+            } catch (err) { reject(err); }
+          };
+          img.onerror = () => reject(new Error('Could not decode image'));
+          img.src = reader.result;
+        };
+        reader.onerror = () => reject(new Error('Could not read file'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    /* ================= Settings persistence ================= */
+    function saveSettings() {
+      try {
+        const payload = {
+          version: CONFIG_VERSION,
+          settings: STATE.settings,
+          profiles: STATE.profiles,
+          biases: STATE.biases
+        };
+        localStorage.setItem(STORE_KEY, JSON.stringify(payload));
+      } catch (err) { /* storage unavailable */ }
+    }
+
+    function migrateProfiles(profiles) {
+      for (const id of Object.keys(profiles)) {
+        const base = BASE_PROFILES[id];
+        if (base && (!profiles[id].device || !profiles[id].device.length)) {
+          profiles[id].device = base.device.map(c => [...c]);
+        }
+      }
+      return profiles;
+    }
+
+    function loadSettings() {
+      try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (!raw) return false;
+        const payload = JSON.parse(raw);
+        if (!payload || payload.version !== CONFIG_VERSION) return false;
+        if (payload.settings) {
+          STATE.settings = Object.assign({}, DEFAULTS, payload.settings);
+          STATE.settings.controls = Object.assign({}, DEFAULT_CONTROLS, payload.settings.controls);
+          STATE.settings.dither = Object.assign({}, DITHER_DEFAULTS, payload.settings.dither);
+        }
+        if (payload.profiles && payload.profiles[STATE.settings.profileId]) {
+          STATE.profiles = migrateProfiles(payload.profiles);
+        }
+        if (payload.biases) STATE.biases = payload.biases;
+        return true;
+      } catch (err) { return false; }
+    }
+
+    function resetSettings() {
+      try { localStorage.removeItem(STORE_KEY); } catch (err) {}
+      STATE.settings = clone(DEFAULTS);
+      STATE.profiles = clone(BASE_PROFILES);
+      STATE.biases = {};
+      applySettingsToUI();
+      setStatus('Settings reset.');
+    }
+
+    /** Sync the theme attribute and the toggle button label from STATE. */
+    function applyThemeToUI() {
+      document.documentElement.setAttribute('data-theme', STATE.settings.theme);
+      UI.themeBtn.textContent = STATE.settings.theme === 'dark' ? 'Light' : 'Dark';
+    }
+
+    function applySettingsToUI() {
+      applyThemeToUI();
+      buildProfileSelect();
+      buildPresetSelect();
+      UI.orientation.value = STATE.settings.orientation;
+      UI.widthInput.value = STATE.settings.width;
+      UI.heightInput.value = STATE.settings.height;
+      UI.outputFormat.value = STATE.settings.format;
+      syncAdjustControls();
+      buildPaletteList();
+      if (STATE.sourceImage) { initCropRect(); scheduleRender(); }
+    }
+
+    function exportSettings() {
+      const payload = {
+        version: CONFIG_VERSION,
+        settings: STATE.settings,
+        profiles: STATE.profiles,
+        biases: STATE.biases
+      };
+      downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }), 'epaper-converter-settings.json');
+    }
+
+    function importSettings(file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const payload = JSON.parse(reader.result);
+          if (!payload || payload.version !== CONFIG_VERSION) { setStatus('Invalid settings file.'); return; }
+          if (payload.settings) {
+            STATE.settings = Object.assign({}, DEFAULTS, payload.settings);
+            STATE.settings.controls = Object.assign({}, DEFAULT_CONTROLS, payload.settings.controls);
+            STATE.settings.dither = Object.assign({}, DITHER_DEFAULTS, payload.settings.dither);
+          }
+          if (payload.profiles) STATE.profiles = migrateProfiles(payload.profiles);
+          if (payload.biases) STATE.biases = payload.biases;
+          applySettingsToUI();
+          saveSettings();
+          setStatus('Settings imported.');
+        } catch (err) { setStatus('Invalid settings file.'); }
+      };
+      reader.readAsText(file);
+    }
+
+    /* ================= Event wiring ================= */
+    UI.dropZone.addEventListener('click', () => UI.fileInput.click());
+    UI.dropZone.addEventListener('dragover', e => { e.preventDefault(); UI.dropZone.classList.add('dragover'); });
+    UI.dropZone.addEventListener('dragleave', () => UI.dropZone.classList.remove('dragover'));
+    UI.dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      UI.dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) loadImage(e.dataTransfer.files[0]);
+    });
+    // Also allow dropping a new image onto the whole center area once one is loaded
+    const centerArea = $('centerArea');
+    centerArea.addEventListener('dragover', e => e.preventDefault());
+    centerArea.addEventListener('drop', e => {
+      e.preventDefault();
+      if (e.dataTransfer.files.length) loadImage(e.dataTransfer.files[0]);
+    });
+    UI.changeImageBtn.addEventListener('click', () => UI.fileInput.click());
+    UI.fileInput.addEventListener('change', () => {
+      if (UI.fileInput.files.length) loadImage(UI.fileInput.files[0]);
+    });
+
+    UI.orientation.addEventListener('change', () => {
+      const w = UI.widthInput.value;
+      UI.widthInput.value = UI.heightInput.value;
+      UI.heightInput.value = w;
+      STATE.settings.orientation = UI.orientation.value;
+      STATE.settings.width = parseInt(UI.widthInput.value) || DEFAULTS.width;
+      STATE.settings.height = parseInt(UI.heightInput.value) || DEFAULTS.height;
+      markCustomPreset();
+      saveSettings();
+      if (STATE.sourceImage) { initCropRect(); scheduleRender(); }
+    });
+    UI.widthInput.addEventListener('change', () => {
+      STATE.settings.width = parseInt(UI.widthInput.value) || DEFAULTS.width;
+      markCustomPreset();
+      saveSettings();
+      if (STATE.sourceImage) { initCropRect(); scheduleRender(); }
+    });
+    UI.heightInput.addEventListener('change', () => {
+      STATE.settings.height = parseInt(UI.heightInput.value) || DEFAULTS.height;
+      markCustomPreset();
+      saveSettings();
+      if (STATE.sourceImage) { initCropRect(); scheduleRender(); }
+    });
+
+    UI.cropOverlay.addEventListener('mousedown', onCropStart);
+    UI.cropOverlay.addEventListener('touchstart', onCropStart, { passive: false });
+
+    UI.ditherStrength.addEventListener('input', () => {
+      STATE.settings.dither.strength = parseInt(UI.ditherStrength.value, 10);
+      UI.ditherStrengthVal.textContent = UI.ditherStrength.value + '%';
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+    UI.ditherAlgorithm.addEventListener('change', () => {
+      STATE.settings.dither.algorithm = UI.ditherAlgorithm.value;
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+    UI.ditherSerpentine.addEventListener('change', () => {
+      STATE.settings.dither.serpentine = UI.ditherSerpentine.checked;
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+
+    UI.outputFormat.addEventListener('change', () => {
+      STATE.settings.format = UI.outputFormat.value;
+      saveSettings();
+    });
+
+    UI.profileSelect.addEventListener('change', () => {
+      STATE.settings.profileId = UI.profileSelect.value;
+      markCustomPreset();
+      buildPaletteList();
+      saveSettings();
+      scheduleRender();
+    });
+
+    UI.presetSelect.addEventListener('change', () => {
+      const id = UI.presetSelect.value;
+      STATE.settings.presetId = id;
+      if (id && PRESETS[id]) {
+        STATE.settings.controls = { ...PRESETS[id].controls };
+      } else {
+        STATE.settings.controls = { ...DEFAULT_CONTROLS };
+      }
+      syncAdjustControls();
+      saveSettings();
+      scheduleRender();
+    });
+
+    UI.resetBtn.addEventListener('click', () => resetSettings());
+
+    UI.themeBtn.addEventListener('click', () => {
+      STATE.settings.theme = STATE.settings.theme === 'dark' ? 'light' : 'dark';
+      applyThemeToUI();
+      saveSettings();
+      scheduleRender();
+    });
+
+    UI.downloadBtn.addEventListener('click', () => {
+      if (!STATE.finalImageData) return;
+      const name = STATE.originalFileName.replace(/\.[^.]+$/, '') + '.' + STATE.settings.format;
+      setStatus('Preparing download...');
+      blobFromImageData(STATE.finalImageData, STATE.targetW, STATE.targetH, STATE.settings.format).then(blob => {
+        downloadBlob(blob, name);
+        setStatus('Downloaded.');
+      }).catch(() => setStatus('Failed to build download.'));
+    });
+
+    UI.exportSettingsBtn.addEventListener('click', () => exportSettings());
+    UI.importSettingsBtn.addEventListener('click', () => UI.settingsFile.click());
+    UI.settingsFile.addEventListener('change', () => {
+      if (UI.settingsFile.files.length) importSettings(UI.settingsFile.files[0]);
+    });
+
+    UI.addFilesBtn.addEventListener('click', () => UI.batchInput.click());
+    UI.batchInput.addEventListener('change', () => {
+      if (UI.batchInput.files.length) {
+        addToQueue(UI.batchInput.files);
+        UI.batchInput.value = '';
+      }
+    });
+    UI.convertSelectedBtn.addEventListener('click', () => convertQueue(selectedQueueItems()));
+    UI.convertAllBtn.addEventListener('click', () => convertQueue(null));
+    UI.clearQueueBtn.addEventListener('click', () => {
+      STATE.queue = [];
+      renderQueue();
+      setStatus('Queue cleared.');
+    });
+    UI.downloadZipBtn.addEventListener('click', async () => {
+      const done = STATE.queue.filter(q => q.status === 'done' && q.blob);
+      if (!done.length) return;
+      setStatus('Building ZIP...');
+      try {
+        const entries = done.map(q => ({ name: q.file.name.replace(/\.[^.]+$/, '') + '.' + STATE.settings.format, blob: q.blob }));
+        const zip = await makeZip(entries);
+        downloadBlob(zip, 'waveshare-converted.zip');
+        setStatus('ZIP downloaded.');
+      } catch (err) {
+        setStatus('Failed to build ZIP.');
+      }
+    });
+
+    UI.compareToggle.addEventListener('change', () => {
+      UI.compareSlider.disabled = !UI.compareToggle.checked;
+      updateCompare();
+    });
+    UI.compareSlider.addEventListener('input', () => updateCompare());
+    function updateCompare() {
+      const on = UI.compareToggle.checked;
+      UI.compareTop.classList.toggle('hidden', !on);
+      if (on) {
+        const pct = UI.compareSlider.value;
+        UI.compareTop.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+      }
+    }
+
+    document.querySelectorAll('.panel-head').forEach(head => {
+      head.addEventListener('click', () => {
+        head.parentElement.classList.toggle('collapsed');
+      });
+    });
+    document.querySelectorAll('[data-reset]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const target = btn.dataset.reset;
+        if (target && target.startsWith('ctl_')) {
+          const key = target.slice(4);
+          const def = DEFAULT_CONTROLS[key];
+          if (def != null) {
+            STATE.settings.controls[key] = def;
+            syncAdjustControls();
+            saveSettings();
+            scheduleRender();
+          }
+        } else if (target === 'ditherStrength') {
+          STATE.settings.dither.strength = DITHER_DEFAULTS.strength;
+          syncAdjustControls();
+          saveSettings();
+          scheduleRender();
+        }
+      });
+    });
+
+    /* ================= Init ================= */
+    function init() {
+      const loaded = loadSettings();
+      buildProfileSelect();
+      buildPresetSelect();
+      buildAdjustControls();
+      applySettingsToUI();
+      if (!loaded) saveSettings();
+      renderQueue();
+      setStatus('Ready');
+    }
+
+    init();
+  </script>
+</body>
+</html>
