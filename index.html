@@ -528,7 +528,7 @@
   </main>
 
   <footer class="statusbar">
-    <span id="status">Ready</span>
+    <span id="status" aria-live="polite">Ready</span>
     <div class="progress-wrap" id="progressWrap"><div class="bar" id="progressBar"></div></div>
     <span id="progressText"></span>
   </footer>
@@ -658,6 +658,22 @@
       presetId: ''
     };
 
+    // -- Magic numbers extracted to named constants --
+    const BMP_HEADER_SIZE = 54;
+    const BMP_DIB_HEADER_SIZE = 40;
+    const BMP_BPP = 24;
+    const BMP_DPI = 2835;
+    const ZIP_LOCAL_HEADER_SIZE = 30;
+    const ZIP_CENTRAL_HEADER_SIZE = 46;
+    const ZIP_EOCD_SIZE = 22;
+    const ZIP_VERSION = 20;
+    const ZIP_FLAGS = 0x0800;
+    const DEFAULT_BIAS = 100;
+    const MIN_CROP_SIZE = 20;
+    const MIN_SELECTION_AREA = 2;
+    const HISTOGRAM_BINS = 64;
+    const CACHE_SIZE_LIMIT = 4096;
+
     const STATE = {
       sourceImage: null,
       originalFileName: 'image',
@@ -678,8 +694,17 @@
 
     function clone(x) { return JSON.parse(JSON.stringify(x)); }
 
+    /** Clamp a number to [min, max]. */
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+    /** Convert a 0..1 float channel to an 0..255 byte. */
+    function floatToByte(v) { return Math.round(clamp(v, 0, 1) * 255); }
+
+    /** Convert a 0..255 byte channel to a 0..1 float. */
+    function byteToFloat(v) { return v / 255; }
+
     function rgbToHex([r, g, b]) {
-      return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+      return '#' + [r, g, b].map(v => clamp(Math.round(v), 0, 255).toString(16).padStart(2, '0')).join('');
     }
     function hexToRgb(hex) {
       const h = hex.replace('#', '');
@@ -692,14 +717,14 @@
       if (!STATE.biases[key]) {
         const p = STATE.profiles[key];
         const b = {};
-        p.palette.forEach(c => { b[c.name] = 100; });
+        p.palette.forEach(c => { b[c.name] = DEFAULT_BIAS; });
         STATE.biases[key] = b;
       }
       return STATE.biases[key];
     }
 
     const $ = id => document.getElementById(id);
-    const els = {
+    const UI = {
       profileSelect: $('profileSelect'), presetSelect: $('presetSelect'), resetBtn: $('resetBtn'), themeBtn: $('themeBtn'),
       dropZone: $('emptyState'), changeImageBtn: $('changeImageBtn'), fileInput: $('fileInput'), imageInfo: $('imageInfo'),
       orientation: $('orientation'), widthInput: $('widthInput'), heightInput: $('heightInput'),
@@ -730,15 +755,18 @@
       return workBuffer;
     }
 
-    function setStatus(msg) { els.status.textContent = msg; }
+    function setStatus(msg) { UI.status.textContent = msg; }
     function setProgress(pct, text) {
-      if (pct === null) { els.progressWrap.style.display = 'none'; els.progressText.textContent = ''; return; }
-      els.progressWrap.style.display = 'block';
-      els.progressBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
-      els.progressText.textContent = text || '';
+      if (pct === null) { UI.progressWrap.style.display = 'none'; UI.progressText.textContent = ''; return; }
+      UI.progressWrap.style.display = 'block';
+      UI.progressBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      UI.progressText.textContent = text || '';
     }
 
-    /* ================= Colour science ================= */
+    /**
+     * Apply brightness/contrast/gamma/colour adjustments to a Float32 work buffer
+     * (channels in 0..1, packed RGB, 3 values per pixel). Mutates `work` in place.
+     */
     function applyAdjustments(work, w, h, c) {
       const br = c.brightness / 100, co = c.contrast / 100;
       const sa = c.saturation / 100, vib = c.vibrance / 100;
@@ -765,6 +793,11 @@
       }
     }
 
+    /**
+     * Error-diffusion dithering in float space. Quantises each pixel to the closest
+     * palette colour (weighted-RGB with per-colour bias) and diffuses the error to
+     * neighbouring pixels using the given kernel. Mutates `work` in place.
+     */
     function ditherFloat(work, w, h, profile, algorithm, strength, serpentine) {
       const kernel = DITHER_KERNELS[algorithm] || DITHER_KERNELS.floyd;
       const div = kernel.div;
@@ -786,12 +819,12 @@
               const cr = pal[k].rgb[0]/255, cg = pal[k].rgb[1]/255, cb = pal[k].rgb[2]/255;
               const dr = or-cr, dg = og-cg, db = ob-cb;
               let dist = wt.r*dr*dr + wt.g*dg*dg + wt.b*db*db;
-              const bias = (biasMap[pal[k].name] || 100) / 100;
+              const bias = (biasMap[pal[k].name] || DEFAULT_BIAS) / 100;
               if (bias > 0) dist = dist / bias;
               if (dist < bestDist) { bestDist = dist; bestIdx = k; }
             }
             newRgb = pal[bestIdx].rgb;
-            if (cache.size < 4096) cache.set(Math.round(or*255) + ',' + Math.round(og*255) + ',' + Math.round(ob*255), newRgb);
+            if (cache.size < CACHE_SIZE_LIMIT) cache.set(Math.round(or*255) + ',' + Math.round(og*255) + ',' + Math.round(ob*255), newRgb);
           }
           const nr = newRgb[0]/255, ng = newRgb[1]/255, nb = newRgb[2]/255;
           work[idx] = nr; work[idx+1] = ng; work[idx+2] = nb;
@@ -812,29 +845,35 @@
     }
 
     /* ================= BMP / PNG / ZIP ================= */
+
+    /**
+     * Build a 24-bit BMP Blob from RGBA ImageData. Bottom-up rows, BGR byte order,
+     * each row padded to a 4-byte boundary. This format is what the device firmware
+     * expects; do not change the layout.
+     */
     function generateBMP(imageData, width, height) {
       const rowSize = Math.ceil((width * 3) / 4) * 4;
       const pixelDataSize = rowSize * height;
-      const fileSize = 54 + pixelDataSize;
+      const fileSize = BMP_HEADER_SIZE + pixelDataSize;
       const buffer = new ArrayBuffer(fileSize);
       const view = new DataView(buffer);
       view.setUint8(0, 0x42); view.setUint8(1, 0x4D);
       view.setUint32(2, fileSize, true);
-      view.setUint32(10, 54, true);
-      view.setUint32(14, 40, true);
+      view.setUint32(10, BMP_HEADER_SIZE, true);
+      view.setUint32(14, BMP_DIB_HEADER_SIZE, true);
       view.setInt32(18, width, true);
       view.setInt32(22, height, true);
       view.setUint16(26, 1, true);
-      view.setUint16(28, 24, true);
+      view.setUint16(28, BMP_BPP, true);
       view.setUint32(34, pixelDataSize, true);
-      view.setUint32(38, 2835, true);
-      view.setUint32(42, 2835, true);
+      view.setUint32(38, BMP_DPI, true);
+      view.setUint32(42, BMP_DPI, true);
       const data = imageData.data;
       for (let y = 0; y < height; y++) {
         const destRow = height - 1 - y;
         for (let x = 0; x < width; x++) {
           const srcIdx = (y * width + x) * 4;
-          const destIdx = 54 + destRow * rowSize + x * 3;
+          const destIdx = BMP_HEADER_SIZE + destRow * rowSize + x * 3;
           view.setUint8(destIdx, data[srcIdx + 2]);
           view.setUint8(destIdx + 1, data[srcIdx + 1]);
           view.setUint8(destIdx + 2, data[srcIdx]);
@@ -857,6 +896,12 @@
       return Promise.resolve(generateBMP(imgData, w, h));
     }
 
+    /**
+     * Map an RGBA ImageData to the profile's *device* palette. The preview uses the
+     * Real World palette; the exported file must only contain byte-exact device
+     * colours, so this runs immediately before export. Matches on integer RGB
+     * distance (no weights/bias — the device table is exact).
+     */
     function toDeviceImage(imgData, profile) {
       const dev = profile.device;
       if (!dev || !dev.length) return imgData;
@@ -899,6 +944,12 @@
       return [time & 0xFFFF, date & 0xFFFF];
     }
 
+    /**
+     * Hand-rolled stored (uncompressed) ZIP builder. Produces a self-contained Blob
+     * with no external dependencies.
+     * @param {Array<{name: string, blob: Blob}>} entries
+     * @returns {Promise<Blob>}
+     */
     async function makeZip(entries) {
       const enc = new TextEncoder();
       const parts = [];
@@ -910,10 +961,10 @@
         const nameBytes = enc.encode(e.name);
         const data = new Uint8Array(await e.blob.arrayBuffer());
         const crc = crc32(data);
-        const local = new DataView(new ArrayBuffer(30));
+        const local = new DataView(new ArrayBuffer(ZIP_LOCAL_HEADER_SIZE));
         local.setUint32(0, 0x04034b50, true);
-        local.setUint16(4, 20, true);
-        local.setUint16(6, 0x0800, true);
+        local.setUint16(4, ZIP_VERSION, true);
+        local.setUint16(6, ZIP_FLAGS, true);
         local.setUint16(8, 0, true);
         local.setUint16(10, modTime, true);
         local.setUint16(12, modDate, true);
@@ -923,11 +974,11 @@
         local.setUint16(26, nameBytes.length, true);
         local.setUint16(28, 0, true);
         parts.push(local.buffer, nameBytes.buffer, data.buffer);
-        const cd = new DataView(new ArrayBuffer(46));
+        const cd = new DataView(new ArrayBuffer(ZIP_CENTRAL_HEADER_SIZE));
         cd.setUint32(0, 0x02014b50, true);
-        cd.setUint16(4, 20, true);
-        cd.setUint16(6, 20, true);
-        cd.setUint16(8, 0x0800, true);
+        cd.setUint16(4, ZIP_VERSION, true);
+        cd.setUint16(6, ZIP_VERSION, true);
+        cd.setUint16(8, ZIP_FLAGS, true);
         cd.setUint16(10, 0, true);
         cd.setUint16(12, modTime, true);
         cd.setUint16(14, modDate, true);
@@ -937,11 +988,11 @@
         cd.setUint16(28, nameBytes.length, true);
         cd.setUint32(42, offset, true);
         central.push({ buffer: cd.buffer, name: nameBytes });
-        offset += 30 + nameBytes.length + data.length;
+        offset += ZIP_LOCAL_HEADER_SIZE + nameBytes.length + data.length;
       }
-      const centralSize = central.reduce((s, c) => s + 46 + c.name.length, 0);
+      const centralSize = central.reduce((s, c) => s + ZIP_CENTRAL_HEADER_SIZE + c.name.length, 0);
       for (const c of central) parts.push(c.buffer, c.name.buffer);
-      const eocd = new DataView(new ArrayBuffer(22));
+      const eocd = new DataView(new ArrayBuffer(ZIP_EOCD_SIZE));
       eocd.setUint32(0, 0x06054b50, true);
       eocd.setUint16(8, central.length, true);
       eocd.setUint16(10, central.length, true);
@@ -961,81 +1012,81 @@
     }
 
     /* ================= Crop logic ================= */
-/* ==== Utility Functions ==== */
+    /* ==== Utility Functions ==== */
 
-/**
- * Returns the target dimensions from the UI, applying defaults.
- * Centralises parsing of width/height inputs.
- */
-function getTargetSize() {
-  const w = parseInt(els.widthInput.value) || DEFAULTS.width;
-  const h = parseInt(els.heightInput.value) || DEFAULTS.height;
-  return { w, h };
-}
+    /**
+     * Returns the target dimensions from the UI, applying defaults.
+     * Centralises parsing of width/height inputs.
+     */
+    function getTargetSize() {
+      const w = parseInt(UI.widthInput.value) || DEFAULTS.width;
+      const h = parseInt(UI.heightInput.value) || DEFAULTS.height;
+      return { w, h };
+    }
 
-/**
- * Returns the target aspect ratio based on current UI size.
- */
-function getTargetAspect() {
-  const { w, h } = getTargetSize();
-  return w / h;
-}
+    /**
+     * Returns the target aspect ratio based on current UI size.
+     */
+    function getTargetAspect() {
+      const { w, h } = getTargetSize();
+      return w / h;
+    }
 
-/**
- * Prepare an ImageData by cropping the source image to `crop` rect
- * and resizing it to the target dimensions.
- * Re‑uses the internal canvases to avoid duplication between the
- * single‑image pipeline and the batch processing code.
- */
-function prepareImage(sourceImg, crop, targetW, targetH) {
-  // Crop
-  cropCanvas.width = crop.x2 - crop.x1;
-  cropCanvas.height = crop.y2 - crop.y1;
-  cropCtx.drawImage(
-    sourceImg,
-    crop.x1,
-    crop.y1,
-    crop.x2 - crop.x1,
-    crop.y2 - crop.y1,
-    0,
-    0,
-    cropCanvas.width,
-    cropCanvas.height
-  );
-  // Resize
-  resizeCanvas.width = targetW;
-  resizeCanvas.height = targetH;
-  resizeCtx.imageSmoothingEnabled = true;
-  resizeCtx.imageSmoothingQuality = 'high';
-  resizeCtx.drawImage(
-    cropCanvas,
-    0,
-    0,
-    cropCanvas.width,
-    cropCanvas.height,
-    0,
-    0,
-    targetW,
-    targetH
-  );
-  return resizeCtx.getImageData(0, 0, targetW, targetH);
-}
+    /**
+     * Prepare an ImageData by cropping the source image to `crop` rect
+     * and resizing it to the target dimensions.
+     * Re-uses the internal canvases to avoid duplication between the
+     * single-image pipeline and the batch processing code.
+     */
+    function prepareImage(sourceImg, crop, targetW, targetH) {
+      // Crop
+      cropCanvas.width = crop.x2 - crop.x1;
+      cropCanvas.height = crop.y2 - crop.y1;
+      cropCtx.drawImage(
+        sourceImg,
+        crop.x1,
+        crop.y1,
+        crop.x2 - crop.x1,
+        crop.y2 - crop.y1,
+        0,
+        0,
+        cropCanvas.width,
+        cropCanvas.height
+      );
+      // Resize
+      resizeCanvas.width = targetW;
+      resizeCanvas.height = targetH;
+      resizeCtx.imageSmoothingEnabled = true;
+      resizeCtx.imageSmoothingQuality = 'high';
+      resizeCtx.drawImage(
+        cropCanvas,
+        0,
+        0,
+        cropCanvas.width,
+        cropCanvas.height,
+        0,
+        0,
+        targetW,
+        targetH
+      );
+      return resizeCtx.getImageData(0, 0, targetW, targetH);
+    }
 
-function initCropRect() {
-      const dispW = els.originalImg.clientWidth;
-      const dispH = els.originalImg.clientHeight;
+    function initCropRect() {
+      const dispW = UI.originalImg.clientWidth;
+      const dispH = UI.originalImg.clientHeight;
       if (!dispW || !dispH) return;
       const aspect = getTargetAspect();
       let w, h;
       if (dispW / dispH > aspect) { h = dispH; w = h * aspect; }
       else { w = dispW; h = w / aspect; }
       STATE.cropRect = { x: (dispW - w) / 2, y: (dispH - h) / 2, w: w, h: h };
-      els.cropSelection.classList.remove('hidden');
+      UI.cropSelection.classList.remove('hidden');
       updateCropOverlay();
     }
 
     function getOverlayPos(e) {
-      const rect = els.cropOverlay.getBoundingClientRect();
+      const rect = UI.cropOverlay.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
       return {
@@ -1064,8 +1115,8 @@ function initCropRect() {
       if (!STATE.dragging) return;
       e.preventDefault();
       const pos = getOverlayPos(e);
-      const maxW = els.originalImg.clientWidth;
-      const maxH = els.originalImg.clientHeight;
+      const maxW = UI.originalImg.clientWidth;
+      const maxH = UI.originalImg.clientHeight;
       const dx = pos.x - STATE.dragStart.x;
       const dy = pos.y - STATE.dragStart.y;
       const s = STATE.cropStartRect;
@@ -1092,7 +1143,7 @@ function initCropRect() {
         }
         if (newH > maxH) { newH = maxH; newW = newH * aspect; }
         if (newW > maxW) { newW = maxW; newH = newW / aspect; }
-        if (newW < 20) { newW = 20; newH = newW / aspect; }
+        if (newW < MIN_CROP_SIZE) { newW = MIN_CROP_SIZE; newH = newW / aspect; }
         let nx = STATE.dragging.includes('l') ? ax - newW : ax;
         let ny = STATE.dragging.includes('t') ? ay - newH : ay;
         if (nx < 0) { nx = 0; newW = ax; newH = newW / aspect; }
@@ -1115,20 +1166,20 @@ function initCropRect() {
 
     function updateCropOverlay() {
       const r = STATE.cropRect;
-      const sel = els.cropSelection;
-      if (r.w < 2 || r.h < 2) { sel.classList.add('hidden'); return; }
+      const sel = UI.cropSelection;
+      if (r.w < MIN_SELECTION_AREA || r.h < MIN_SELECTION_AREA) { sel.classList.add('hidden'); return; }
       sel.classList.remove('hidden');
       sel.style.left = r.x + 'px'; sel.style.top = r.y + 'px';
       sel.style.width = r.w + 'px'; sel.style.height = r.h + 'px';
-      els.dimTop.style.cssText = `top:0;left:0;right:0;height:${r.y}px`;
-      els.dimBottom.style.cssText = `bottom:0;left:0;right:0;top:${r.y + r.h}px`;
-      els.dimLeft.style.cssText = `top:${r.y}px;left:0;width:${r.x}px;height:${r.h}px`;
-      els.dimRight.style.cssText = `top:${r.y}px;right:0;left:${r.x + r.w}px;height:${r.h}px`;
+      UI.dimTop.style.cssText = `top:0;left:0;right:0;height:${r.y}px`;
+      UI.dimBottom.style.cssText = `bottom:0;left:0;right:0;top:${r.y + r.h}px`;
+      UI.dimLeft.style.cssText = `top:${r.y}px;left:0;width:${r.x}px;height:${r.h}px`;
+      UI.dimRight.style.cssText = `top:${r.y}px;right:0;left:${r.x + r.w}px;height:${r.h}px`;
     }
 
     function getCropInImageCoords() {
-      const dispW = els.originalImg.clientWidth || 1;
-      const dispH = els.originalImg.clientHeight || 1;
+      const dispW = UI.originalImg.clientWidth || 1;
+      const dispH = UI.originalImg.clientHeight || 1;
       const imgW = STATE.sourceImage.naturalWidth;
       const imgH = STATE.sourceImage.naturalHeight;
       const scaleX = imgW / dispW;
@@ -1142,32 +1193,16 @@ function initCropRect() {
     }
 
     /* ================= Pipeline ================= */
-    function cropToCanvas(sourceImage, crop) {
-      const cw = crop.x2 - crop.x1, ch = crop.y2 - crop.y1;
-      cropCanvas.width = cw;
-      cropCanvas.height = ch;
-      cropCtx.drawImage(sourceImage, crop.x1, crop.y1, cw, ch, 0, 0, cw, ch);
-    }
-
-    function resizeToTarget(crop, targetW, targetH) {
-      resizeCanvas.width = targetW;
-      resizeCanvas.height = targetH;
-      resizeCtx.imageSmoothingEnabled = true;
-      resizeCtx.imageSmoothingQuality = 'high';
-      resizeCtx.drawImage(cropCanvas, 0, 0, cropCanvas.width, cropCanvas.height, 0, 0, targetW, targetH);
-      return resizeCtx.getImageData(0, 0, targetW, targetH);
-    }
-
     function renderToPanels(enhancedImg, finalImg, w, h) {
-      els.enhancedPreview.width = w;
-      els.enhancedPreview.height = h;
-      els.enhancedPreview.getContext('2d').putImageData(enhancedImg, 0, 0);
-      els.finalPreview.width = w;
-      els.finalPreview.height = h;
-      els.finalPreview.getContext('2d').putImageData(finalImg, 0, 0);
-      els.compareTop.width = w;
-      els.compareTop.height = h;
-      els.compareTop.getContext('2d').putImageData(enhancedImg, 0, 0);
+      UI.enhancedPreview.width = w;
+      UI.enhancedPreview.height = h;
+      UI.enhancedPreview.getContext('2d').putImageData(enhancedImg, 0, 0);
+      UI.finalPreview.width = w;
+      UI.finalPreview.height = h;
+      UI.finalPreview.getContext('2d').putImageData(finalImg, 0, 0);
+      UI.compareTop.width = w;
+      UI.compareTop.height = h;
+      UI.compareTop.getContext('2d').putImageData(enhancedImg, 0, 0);
     }
 
     function runPipeline() {
@@ -1177,8 +1212,7 @@ function initCropRect() {
       const cw = crop.x2 - crop.x1, ch = crop.y2 - crop.y1;
       if (cw < 1 || ch < 1) return;
 
-      cropToCanvas(STATE.sourceImage, crop);
-      const baseImg = resizeToTarget(crop, targetW, targetH);
+      const baseImg = prepareImage(STATE.sourceImage, crop, targetW, targetH);
 
       const work = ensureWorkBuffer(targetW, targetH);
       const data = baseImg.data;
@@ -1219,7 +1253,7 @@ function initCropRect() {
       STATE.targetH = targetH;
       updateHistogram(enhancedImg);
       updatePaletteUsage(finalImg, targetW, targetH);
-      els.downloadBtn.disabled = false;
+      UI.downloadBtn.disabled = false;
     }
 
     let renderPending = false;
@@ -1231,10 +1265,10 @@ function initCropRect() {
 
     /* ================= Histogram ================= */
     function updateHistogram(imgData) {
-      const cv = els.histogramCanvas;
+      const cv = UI.histogramCanvas;
       const ctx = cv.getContext('2d');
       const d = imgData.data;
-      const bins = 64;
+      const bins = HISTOGRAM_BINS;
       const hist = new Array(bins).fill(0);
       for (let i = 0; i < d.length; i += 4) {
         const lum = (d[i] * 0.2126 + d[i+1] * 0.7152 + d[i+2] * 0.0722) / 255;
@@ -1273,7 +1307,7 @@ function initCropRect() {
         }
         counts[bestIdx]++;
       }
-      els.paletteUsage.innerHTML = '';
+      UI.paletteUsage.innerHTML = '';
       let html = '';
       for (let k = 0; k < pal.length; k++) {
         const pct = (counts[k] / total * 100);
@@ -1284,7 +1318,7 @@ function initCropRect() {
           <span class="u-pct">${pct.toFixed(1)}%</span>
         </div>`;
       }
-      els.paletteUsage.innerHTML = html;
+      UI.paletteUsage.innerHTML = html;
     }
 
     /* ================= Image loading ================= */
@@ -1296,54 +1330,56 @@ function initCropRect() {
         const img = new Image();
         img.onload = () => {
           STATE.sourceImage = img;
-          els.originalImg.src = img.src;
+          UI.originalImg.src = img.src;
           if (img.width > img.height) {
-            els.orientation.value = 'landscape';
-            els.widthInput.value = 800; els.heightInput.value = 480;
+            UI.orientation.value = 'landscape';
+            UI.widthInput.value = 800; UI.heightInput.value = 480;
           } else {
-            els.orientation.value = 'portrait';
-            els.widthInput.value = 480; els.heightInput.value = 800;
+            UI.orientation.value = 'portrait';
+            UI.widthInput.value = 480; UI.heightInput.value = 800;
           }
-          els.emptyState.classList.add('hidden');
-          els.previewGrid.classList.remove('hidden');
-          els.downloadBtn.disabled = true;
-          els.imageInfo.textContent = `Loaded: ${img.width} x ${img.height}`;
+          UI.emptyState.classList.add('hidden');
+          UI.previewGrid.classList.remove('hidden');
+          UI.downloadBtn.disabled = true;
+          UI.imageInfo.textContent = `Loaded: ${img.width} x ${img.height}`;
           setStatus(`Loaded ${STATE.originalFileName}`);
           requestAnimationFrame(() => requestAnimationFrame(() => {
             initCropRect();
             runPipeline();
           }));
         };
+        img.onerror = () => setStatus('Could not decode image.');
         img.src = reader.result;
       };
+      reader.onerror = () => setStatus('Could not read file.');
       reader.readAsDataURL(file);
     }
 
     /* ================= UI construction ================= */
     function buildProfileSelect() {
-      els.profileSelect.innerHTML = '';
+      UI.profileSelect.innerHTML = '';
       for (const id of Object.keys(STATE.profiles)) {
         const opt = document.createElement('option');
         opt.value = id;
         opt.textContent = STATE.profiles[id].name;
-        els.profileSelect.appendChild(opt);
+        UI.profileSelect.appendChild(opt);
       }
-      els.profileSelect.value = STATE.settings.profileId;
+      UI.profileSelect.value = STATE.settings.profileId;
     }
 
     function buildPresetSelect() {
-      els.presetSelect.innerHTML = '<option value="">Custom</option>';
+      UI.presetSelect.innerHTML = '<option value="">Custom</option>';
       for (const id of Object.keys(PRESETS)) {
         const opt = document.createElement('option');
         opt.value = id;
         opt.textContent = PRESETS[id].label;
-        els.presetSelect.appendChild(opt);
+        UI.presetSelect.appendChild(opt);
       }
-      els.presetSelect.value = STATE.settings.presetId || '';
+      UI.presetSelect.value = STATE.settings.presetId || '';
     }
 
     function buildAdjustControls() {
-      els.adjustControls.innerHTML = '';
+      UI.adjustControls.innerHTML = '';
       for (const meta of CONTROL_META) {
         const wrap = document.createElement('div');
         wrap.className = 'ctl';
@@ -1354,7 +1390,7 @@ function initCropRect() {
             <button class="reset" data-reset="ctl_${meta.key}" title="Reset to default">&#8634;</button>
           </div>
           <input type="range" id="ctl_${meta.key}" min="${meta.min}" max="${meta.max}" step="${meta.step}" value="${DEFAULT_CONTROLS[meta.key]}">`;
-        els.adjustControls.appendChild(wrap);
+        UI.adjustControls.appendChild(wrap);
         const slider = wrap.querySelector(`#ctl_${meta.key}`);
         const valSpan = wrap.querySelector(`#adjVal_${meta.key}`);
         const rbtn = wrap.querySelector('.reset');
@@ -1383,20 +1419,20 @@ function initCropRect() {
           valSpan.textContent = meta.toText(parseFloat(STATE.settings.controls[meta.key]));
         }
       }
-      els.ditherStrength.value = STATE.settings.dither.strength;
-      els.ditherStrengthVal.textContent = STATE.settings.dither.strength + '%';
-      els.ditherAlgorithm.value = STATE.settings.dither.algorithm;
-      els.ditherSerpentine.checked = STATE.settings.dither.serpentine;
+      UI.ditherStrength.value = STATE.settings.dither.strength;
+      UI.ditherStrengthVal.textContent = STATE.settings.dither.strength + '%';
+      UI.ditherAlgorithm.value = STATE.settings.dither.algorithm;
+      UI.ditherSerpentine.checked = STATE.settings.dither.serpentine;
     }
 
     function buildPaletteList() {
-      els.paletteList.innerHTML = '';
+      UI.paletteList.innerHTML = '';
       const profile = currentProfile();
       const biases = profileBiases(profile.id);
       profile.palette.forEach((color, idx) => {
         const row = document.createElement('div');
         row.className = 'swatch-row';
-        const biasVal = biases[color.name] != null ? biases[color.name] : 100;
+        const biasVal = biases[color.name] != null ? biases[color.name] : DEFAULT_BIAS;
         row.innerHTML = `
           <span class="swatch" style="background:${rgbToHex(color.rgb)}" title="Click swatch to recalibrate">
             <input type="color" value="${rgbToHex(color.rgb)}">
@@ -1407,7 +1443,7 @@ function initCropRect() {
           </div>
           <span class="val" data-palette-val="${color.name}">${biasVal}</span>
           <button class="reset" data-palette-reset="${color.name}" title="Reset ${color.name} to default">&#8634;</button>`;
-        els.paletteList.appendChild(row);
+        UI.paletteList.appendChild(row);
         const colorInput = row.querySelector('input[type="color"]');
         colorInput.addEventListener('input', () => {
           color.rgb = hexToRgb(colorInput.value);
@@ -1435,9 +1471,9 @@ function initCropRect() {
             colorInput.value = rgbToHex(color.rgb);
             row.querySelector('.swatch').style.background = rgbToHex(color.rgb);
           }
-          biases[color.name] = 100;
-          slider.value = 100;
-          valSpan.textContent = 100;
+          biases[color.name] = DEFAULT_BIAS;
+          slider.value = DEFAULT_BIAS;
+          valSpan.textContent = DEFAULT_BIAS;
           markCustomPreset();
           saveSettings();
           scheduleRender();
@@ -1446,7 +1482,7 @@ function initCropRect() {
     }
 
     function markCustomPreset() {
-      els.presetSelect.value = '';
+      UI.presetSelect.value = '';
       STATE.settings.presetId = '';
     }
 
@@ -1461,7 +1497,7 @@ function initCropRect() {
     }
 
     function renderQueue() {
-      els.queueList.innerHTML = '';
+      UI.queueList.innerHTML = '';
       for (const item of STATE.queue) {
         const row = document.createElement('div');
         row.className = 'queue-item';
@@ -1472,7 +1508,7 @@ function initCropRect() {
           <span class="q-name" title="${item.file.name}">${item.file.name}</span>
           <span class="q-status ${stClass}">${statusText}</span>
           ${item.status === 'done' && item.blob ? `<a class="q-dl" href="#" data-dl="${item.id}">save</a>` : ''}`;
-        els.queueList.appendChild(row);
+        UI.queueList.appendChild(row);
         if (item.status === 'done' && item.blob) {
           row.querySelector(`[data-dl="${item.id}"]`).addEventListener('click', e => {
             e.preventDefault();
@@ -1481,13 +1517,13 @@ function initCropRect() {
         }
       }
       const pending = STATE.queue.filter(q => q.status === 'pending').length;
-      els.convertAllBtn.disabled = pending === 0;
+      UI.convertAllBtn.disabled = pending === 0;
       const done = STATE.queue.filter(q => q.status === 'done' && q.blob).length;
-      els.downloadZipBtn.disabled = done === 0;
+      UI.downloadZipBtn.disabled = done === 0;
     }
 
     function selectedQueueItems() {
-      const checks = els.queueList.querySelectorAll('.q-check:checked');
+      const checks = UI.queueList.querySelectorAll('.q-check:checked');
       const ids = new Set(Array.from(checks).map(c => c.dataset.id));
       return STATE.queue.filter(q => ids.has(String(q.id)));
     }
@@ -1528,16 +1564,16 @@ function initCropRect() {
           const img = new Image();
           img.onload = () => {
             try {
-const { w: targetW, h: targetH } = getTargetSize();
-                  const aspect = targetW / targetH;
-                  const iw = img.naturalWidth, ih = img.naturalHeight;
-                  let cw, ch;
-                  if (iw / ih > aspect) { ch = ih; cw = ch * aspect; }
-                  else { cw = iw; ch = cw / aspect; }
-                  const cx = Math.round((iw - cw) / 2);
-                  const cy = Math.round((ih - ch) / 2);
-                  const crop = { x1: cx, y1: cy, x2: Math.round(cx + cw), y2: Math.round(cy + ch) };
-                  const base = prepareImage(img, crop, targetW, targetH);
+              const { w: targetW, h: targetH } = getTargetSize();
+              const aspect = targetW / targetH;
+              const iw = img.naturalWidth, ih = img.naturalHeight;
+              let cw, ch;
+              if (iw / ih > aspect) { ch = ih; cw = ch * aspect; }
+              else { cw = iw; ch = cw / aspect; }
+              const cx = Math.round((iw - cw) / 2);
+              const cy = Math.round((ih - ch) / 2);
+              const crop = { x1: cx, y1: cy, x2: Math.round(cx + cw), y2: Math.round(cy + ch) };
+              const base = prepareImage(img, crop, targetW, targetH);
               const work = ensureWorkBuffer(targetW, targetH);
               const d = base.data;
               for (let i = 0, j = 0; i < d.length; i += 4, j += 3) {
@@ -1615,15 +1651,20 @@ const { w: targetW, h: targetH } = getTargetSize();
       setStatus('Settings reset.');
     }
 
-    function applySettingsToUI() {
+    /** Sync the theme attribute and the toggle button label from STATE. */
+    function applyThemeToUI() {
       document.documentElement.setAttribute('data-theme', STATE.settings.theme);
-      els.themeBtn.textContent = STATE.settings.theme === 'dark' ? 'Light' : 'Dark';
+      UI.themeBtn.textContent = STATE.settings.theme === 'dark' ? 'Light' : 'Dark';
+    }
+
+    function applySettingsToUI() {
+      applyThemeToUI();
       buildProfileSelect();
       buildPresetSelect();
-      els.orientation.value = STATE.settings.orientation;
-      els.widthInput.value = STATE.settings.width;
-      els.heightInput.value = STATE.settings.height;
-      els.outputFormat.value = STATE.settings.format;
+      UI.orientation.value = STATE.settings.orientation;
+      UI.widthInput.value = STATE.settings.width;
+      UI.heightInput.value = STATE.settings.height;
+      UI.outputFormat.value = STATE.settings.format;
       syncAdjustControls();
       buildPaletteList();
       if (STATE.sourceImage) { initCropRect(); scheduleRender(); }
@@ -1661,12 +1702,12 @@ const { w: targetW, h: targetH } = getTargetSize();
     }
 
     /* ================= Event wiring ================= */
-    els.dropZone.addEventListener('click', () => els.fileInput.click());
-    els.dropZone.addEventListener('dragover', e => { e.preventDefault(); els.dropZone.classList.add('dragover'); });
-    els.dropZone.addEventListener('dragleave', () => els.dropZone.classList.remove('dragover'));
-    els.dropZone.addEventListener('drop', e => {
+    UI.dropZone.addEventListener('click', () => UI.fileInput.click());
+    UI.dropZone.addEventListener('dragover', e => { e.preventDefault(); UI.dropZone.classList.add('dragover'); });
+    UI.dropZone.addEventListener('dragleave', () => UI.dropZone.classList.remove('dragover'));
+    UI.dropZone.addEventListener('drop', e => {
       e.preventDefault();
-      els.dropZone.classList.remove('dragover');
+      UI.dropZone.classList.remove('dragover');
       if (e.dataTransfer.files.length) loadImage(e.dataTransfer.files[0]);
     });
     // Also allow dropping a new image onto the whole center area once one is loaded
@@ -1676,73 +1717,73 @@ const { w: targetW, h: targetH } = getTargetSize();
       e.preventDefault();
       if (e.dataTransfer.files.length) loadImage(e.dataTransfer.files[0]);
     });
-    els.changeImageBtn.addEventListener('click', () => els.fileInput.click());
-    els.fileInput.addEventListener('change', () => {
-      if (els.fileInput.files.length) loadImage(els.fileInput.files[0]);
+    UI.changeImageBtn.addEventListener('click', () => UI.fileInput.click());
+    UI.fileInput.addEventListener('change', () => {
+      if (UI.fileInput.files.length) loadImage(UI.fileInput.files[0]);
     });
 
-    els.orientation.addEventListener('change', () => {
-      const w = els.widthInput.value;
-      els.widthInput.value = els.heightInput.value;
-      els.heightInput.value = w;
-      STATE.settings.orientation = els.orientation.value;
-      STATE.settings.width = parseInt(els.widthInput.value) || 480;
-      STATE.settings.height = parseInt(els.heightInput.value) || 800;
+    UI.orientation.addEventListener('change', () => {
+      const w = UI.widthInput.value;
+      UI.widthInput.value = UI.heightInput.value;
+      UI.heightInput.value = w;
+      STATE.settings.orientation = UI.orientation.value;
+      STATE.settings.width = parseInt(UI.widthInput.value) || DEFAULTS.width;
+      STATE.settings.height = parseInt(UI.heightInput.value) || DEFAULTS.height;
       markCustomPreset();
       saveSettings();
       if (STATE.sourceImage) { initCropRect(); scheduleRender(); }
     });
-    els.widthInput.addEventListener('change', () => {
-      STATE.settings.width = parseInt(els.widthInput.value) || 480;
+    UI.widthInput.addEventListener('change', () => {
+      STATE.settings.width = parseInt(UI.widthInput.value) || DEFAULTS.width;
       markCustomPreset();
       saveSettings();
       if (STATE.sourceImage) { initCropRect(); scheduleRender(); }
     });
-    els.heightInput.addEventListener('change', () => {
-      STATE.settings.height = parseInt(els.heightInput.value) || 800;
+    UI.heightInput.addEventListener('change', () => {
+      STATE.settings.height = parseInt(UI.heightInput.value) || DEFAULTS.height;
       markCustomPreset();
       saveSettings();
       if (STATE.sourceImage) { initCropRect(); scheduleRender(); }
     });
 
-    els.cropOverlay.addEventListener('mousedown', onCropStart);
-    els.cropOverlay.addEventListener('touchstart', onCropStart, { passive: false });
+    UI.cropOverlay.addEventListener('mousedown', onCropStart);
+    UI.cropOverlay.addEventListener('touchstart', onCropStart, { passive: false });
 
-    els.ditherStrength.addEventListener('input', () => {
-      STATE.settings.dither.strength = parseInt(els.ditherStrength.value, 10);
-      els.ditherStrengthVal.textContent = els.ditherStrength.value + '%';
+    UI.ditherStrength.addEventListener('input', () => {
+      STATE.settings.dither.strength = parseInt(UI.ditherStrength.value, 10);
+      UI.ditherStrengthVal.textContent = UI.ditherStrength.value + '%';
       markCustomPreset();
       saveSettings();
       scheduleRender();
     });
-    els.ditherAlgorithm.addEventListener('change', () => {
-      STATE.settings.dither.algorithm = els.ditherAlgorithm.value;
+    UI.ditherAlgorithm.addEventListener('change', () => {
+      STATE.settings.dither.algorithm = UI.ditherAlgorithm.value;
       markCustomPreset();
       saveSettings();
       scheduleRender();
     });
-    els.ditherSerpentine.addEventListener('change', () => {
-      STATE.settings.dither.serpentine = els.ditherSerpentine.checked;
+    UI.ditherSerpentine.addEventListener('change', () => {
+      STATE.settings.dither.serpentine = UI.ditherSerpentine.checked;
       markCustomPreset();
       saveSettings();
       scheduleRender();
     });
 
-    els.outputFormat.addEventListener('change', () => {
-      STATE.settings.format = els.outputFormat.value;
+    UI.outputFormat.addEventListener('change', () => {
+      STATE.settings.format = UI.outputFormat.value;
       saveSettings();
     });
 
-    els.profileSelect.addEventListener('change', () => {
-      STATE.settings.profileId = els.profileSelect.value;
+    UI.profileSelect.addEventListener('change', () => {
+      STATE.settings.profileId = UI.profileSelect.value;
       markCustomPreset();
       buildPaletteList();
       saveSettings();
       scheduleRender();
     });
 
-    els.presetSelect.addEventListener('change', () => {
-      const id = els.presetSelect.value;
+    UI.presetSelect.addEventListener('change', () => {
+      const id = UI.presetSelect.value;
       STATE.settings.presetId = id;
       if (id && PRESETS[id]) {
         STATE.settings.controls = { ...PRESETS[id].controls };
@@ -1754,67 +1795,70 @@ const { w: targetW, h: targetH } = getTargetSize();
       scheduleRender();
     });
 
-    els.resetBtn.addEventListener('click', () => resetSettings());
+    UI.resetBtn.addEventListener('click', () => resetSettings());
 
-    els.themeBtn.addEventListener('click', () => {
+    UI.themeBtn.addEventListener('click', () => {
       STATE.settings.theme = STATE.settings.theme === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', STATE.settings.theme);
-      els.themeBtn.textContent = STATE.settings.theme === 'dark' ? 'Light' : 'Dark';
+      applyThemeToUI();
       saveSettings();
       scheduleRender();
     });
 
-    els.downloadBtn.addEventListener('click', () => {
+    UI.downloadBtn.addEventListener('click', () => {
       if (!STATE.finalImageData) return;
       const name = STATE.originalFileName.replace(/\.[^.]+$/, '') + '.' + STATE.settings.format;
       setStatus('Preparing download...');
       blobFromImageData(STATE.finalImageData, STATE.targetW, STATE.targetH, STATE.settings.format).then(blob => {
         downloadBlob(blob, name);
         setStatus('Downloaded.');
-      });
+      }).catch(() => setStatus('Failed to build download.'));
     });
 
-    els.exportSettingsBtn.addEventListener('click', () => exportSettings());
-    els.importSettingsBtn.addEventListener('click', () => els.settingsFile.click());
-    els.settingsFile.addEventListener('change', () => {
-      if (els.settingsFile.files.length) importSettings(els.settingsFile.files[0]);
+    UI.exportSettingsBtn.addEventListener('click', () => exportSettings());
+    UI.importSettingsBtn.addEventListener('click', () => UI.settingsFile.click());
+    UI.settingsFile.addEventListener('change', () => {
+      if (UI.settingsFile.files.length) importSettings(UI.settingsFile.files[0]);
     });
 
-    els.addFilesBtn.addEventListener('click', () => els.batchInput.click());
-    els.batchInput.addEventListener('change', () => {
-      if (els.batchInput.files.length) {
-        addToQueue(els.batchInput.files);
-        els.batchInput.value = '';
+    UI.addFilesBtn.addEventListener('click', () => UI.batchInput.click());
+    UI.batchInput.addEventListener('change', () => {
+      if (UI.batchInput.files.length) {
+        addToQueue(UI.batchInput.files);
+        UI.batchInput.value = '';
       }
     });
-    els.convertSelectedBtn.addEventListener('click', () => convertQueue(selectedQueueItems()));
-    els.convertAllBtn.addEventListener('click', () => convertQueue(null));
-    els.clearQueueBtn.addEventListener('click', () => {
+    UI.convertSelectedBtn.addEventListener('click', () => convertQueue(selectedQueueItems()));
+    UI.convertAllBtn.addEventListener('click', () => convertQueue(null));
+    UI.clearQueueBtn.addEventListener('click', () => {
       STATE.queue = [];
       renderQueue();
       setStatus('Queue cleared.');
     });
-    els.downloadZipBtn.addEventListener('click', async () => {
+    UI.downloadZipBtn.addEventListener('click', async () => {
       const done = STATE.queue.filter(q => q.status === 'done' && q.blob);
       if (!done.length) return;
       setStatus('Building ZIP...');
-      const entries = done.map(q => ({ name: q.file.name.replace(/\.[^.]+$/, '') + '.' + STATE.settings.format, blob: q.blob }));
-      const zip = await makeZip(entries);
-      downloadBlob(zip, 'waveshare-converted.zip');
-      setStatus('ZIP downloaded.');
+      try {
+        const entries = done.map(q => ({ name: q.file.name.replace(/\.[^.]+$/, '') + '.' + STATE.settings.format, blob: q.blob }));
+        const zip = await makeZip(entries);
+        downloadBlob(zip, 'waveshare-converted.zip');
+        setStatus('ZIP downloaded.');
+      } catch (err) {
+        setStatus('Failed to build ZIP.');
+      }
     });
 
-    els.compareToggle.addEventListener('change', () => {
-      els.compareSlider.disabled = !els.compareToggle.checked;
+    UI.compareToggle.addEventListener('change', () => {
+      UI.compareSlider.disabled = !UI.compareToggle.checked;
       updateCompare();
     });
-    els.compareSlider.addEventListener('input', () => updateCompare());
+    UI.compareSlider.addEventListener('input', () => updateCompare());
     function updateCompare() {
-      const on = els.compareToggle.checked;
-      els.compareTop.classList.toggle('hidden', !on);
+      const on = UI.compareToggle.checked;
+      UI.compareTop.classList.toggle('hidden', !on);
       if (on) {
-        const pct = els.compareSlider.value;
-        els.compareTop.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+        const pct = UI.compareSlider.value;
+        UI.compareTop.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
       }
     }
 
