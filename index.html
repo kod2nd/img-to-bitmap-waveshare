@@ -961,13 +961,67 @@
     }
 
     /* ================= Crop logic ================= */
-    function getTargetAspect() {
-      const w = parseInt(els.widthInput.value) || 480;
-      const h = parseInt(els.heightInput.value) || 800;
-      return w / h;
-    }
+/* ==== Utility Functions ==== */
 
-    function initCropRect() {
+/**
+ * Returns the target dimensions from the UI, applying defaults.
+ * Centralises parsing of width/height inputs.
+ */
+function getTargetSize() {
+  const w = parseInt(els.widthInput.value) || DEFAULTS.width;
+  const h = parseInt(els.heightInput.value) || DEFAULTS.height;
+  return { w, h };
+}
+
+/**
+ * Returns the target aspect ratio based on current UI size.
+ */
+function getTargetAspect() {
+  const { w, h } = getTargetSize();
+  return w / h;
+}
+
+/**
+ * Prepare an ImageData by cropping the source image to `crop` rect
+ * and resizing it to the target dimensions.
+ * Re‑uses the internal canvases to avoid duplication between the
+ * single‑image pipeline and the batch processing code.
+ */
+function prepareImage(sourceImg, crop, targetW, targetH) {
+  // Crop
+  cropCanvas.width = crop.x2 - crop.x1;
+  cropCanvas.height = crop.y2 - crop.y1;
+  cropCtx.drawImage(
+    sourceImg,
+    crop.x1,
+    crop.y1,
+    crop.x2 - crop.x1,
+    crop.y2 - crop.y1,
+    0,
+    0,
+    cropCanvas.width,
+    cropCanvas.height
+  );
+  // Resize
+  resizeCanvas.width = targetW;
+  resizeCanvas.height = targetH;
+  resizeCtx.imageSmoothingEnabled = true;
+  resizeCtx.imageSmoothingQuality = 'high';
+  resizeCtx.drawImage(
+    cropCanvas,
+    0,
+    0,
+    cropCanvas.width,
+    cropCanvas.height,
+    0,
+    0,
+    targetW,
+    targetH
+  );
+  return resizeCtx.getImageData(0, 0, targetW, targetH);
+}
+
+function initCropRect() {
       const dispW = els.originalImg.clientWidth;
       const dispH = els.originalImg.clientHeight;
       if (!dispW || !dispH) return;
@@ -1118,8 +1172,7 @@
 
     function runPipeline() {
       if (!STATE.sourceImage) return;
-      const targetW = parseInt(els.widthInput.value) || 480;
-      const targetH = parseInt(els.heightInput.value) || 800;
+      const { w: targetW, h: targetH } = getTargetSize();
       const crop = getCropInImageCoords();
       const cw = crop.x2 - crop.x1, ch = crop.y2 - crop.y1;
       if (cw < 1 || ch < 1) return;
@@ -1475,23 +1528,16 @@
           const img = new Image();
           img.onload = () => {
             try {
-              const targetW = parseInt(els.widthInput.value) || 480;
-              const targetH = parseInt(els.heightInput.value) || 800;
-              const aspect = targetW / targetH;
-              const iw = img.naturalWidth, ih = img.naturalHeight;
-              let cw, ch;
-              if (iw / ih > aspect) { ch = ih; cw = ch * aspect; }
-              else { cw = iw; ch = cw / aspect; }
-              const cx = (iw - cw) / 2, cy = (ih - ch) / 2;
-              cropCanvas.width = Math.round(cw);
-              cropCanvas.height = Math.round(ch);
-              cropCtx.drawImage(img, Math.round(cx), Math.round(cy), Math.round(cw), Math.round(ch), 0, 0, Math.round(cw), Math.round(ch));
-              resizeCanvas.width = targetW;
-              resizeCanvas.height = targetH;
-              resizeCtx.imageSmoothingEnabled = true;
-              resizeCtx.imageSmoothingQuality = 'high';
-              resizeCtx.drawImage(cropCanvas, 0, 0, targetW, targetH);
-              const base = resizeCtx.getImageData(0, 0, targetW, targetH);
+const { w: targetW, h: targetH } = getTargetSize();
+                  const aspect = targetW / targetH;
+                  const iw = img.naturalWidth, ih = img.naturalHeight;
+                  let cw, ch;
+                  if (iw / ih > aspect) { ch = ih; cw = ch * aspect; }
+                  else { cw = iw; ch = cw / aspect; }
+                  const cx = Math.round((iw - cw) / 2);
+                  const cy = Math.round((ih - ch) / 2);
+                  const crop = { x1: cx, y1: cy, x2: Math.round(cx + cw), y2: Math.round(cy + ch) };
+                  const base = prepareImage(img, crop, targetW, targetH);
               const work = ensureWorkBuffer(targetW, targetH);
               const d = base.data;
               for (let i = 0, j = 0; i < d.length; i += 4, j += 3) {
