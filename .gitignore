@@ -1,0 +1,15 @@
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config (opencode/qodo)
+.opencode/
+.qodo/
+
+AGENTS.md
