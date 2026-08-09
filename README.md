@@ -2,7 +2,7 @@
 
 A browser-based image converter for the [Waveshare PhotoPainter (B)](https://www.waveshare.com/photopainter.htm) 6-colour e-paper display.
 
-The entire application runs **in your browser**. There is no installation, no server, no build step, and no telemetry. Images are processed locally on your machine and are never uploaded anywhere.
+The application runs **in your browser**. There is no installation, no server, no build step, and no telemetry. Images are processed locally on your machine and are never uploaded anywhere.
 
 ## Why this project exists
 
@@ -18,7 +18,16 @@ This project was built to fill that gap with:
 - **Batch processing** — convert a queue of images and download them as a ZIP
 - **Faster workflow** — drag-and-drop, live preview, and settings that persist between sessions
 
-The project is based on [color-e-paper-image-converter](https://gitlab.com/matthew/color-e-paper-image-converter) by Matthew.
+## Usage
+
+1. **Open the app** — double-click `index.html` (or open the hosted version).
+2. **Drag an image** — JPG, PNG, GIF, and BMP are supported. Drop it anywhere in the work area.
+3. **Crop if desired** — the crop window is pre-sized to your target aspect ratio; drag it or its handles to choose what fills the display. Set width/height (default 480×800 portrait, 800×480 landscape).
+4. **Adjust colour** — tune brightness, contrast, gamma, saturation, vibrance, shadows, and highlights. Pick a preset or set values manually.
+5. **Preview** — watch the Original, Enhanced, and Final e-paper previews update live. Use the compare slider to A/B the result.
+6. **Export BMP** — click **Download** to get a 24-bit BMP sized exactly for the display.
+7. **Copy to SD card** — transfer the BMP onto the PhotoPainter's SD card 'pic' folder (create one if it doesnt exist).
+8. **Insert into the PhotoPainter (B)** — the display renders it directly.
 
 ## Features
 
@@ -73,20 +82,6 @@ Every adjustment has a one-click reset to its default value.
 - No build process
 - No network requests after the page loads
 - Works offline once the file is saved
-
-## Usage
-
-1. **Open the app** — double-click `index.html` (or open the hosted version).
-2. **Drag an image** — JPG, PNG, GIF, and BMP are supported. Drop it anywhere in the work area.
-3. **Crop if desired** — the crop window is pre-sized to your target aspect ratio; drag it or its handles to choose what fills the display. Set width/height (default 480×800 portrait, 800×480 landscape).
-4. **Adjust colour** — tune brightness, contrast, gamma, saturation, vibrance, shadows, and highlights. Pick a preset or set values manually.
-5. **Preview** — watch the Original, Enhanced, and Final e-paper previews update live. Use the compare slider to A/B the result.
-6. **Export BMP** — click **Download** to get a 24-bit BMP sized exactly for the display.
-7. **Copy to SD card** — transfer the BMP onto the PhotoPainter's SD card.
-8. **Insert into the PhotoPainter (B)** — the display renders it directly.
-
-> [!TIP]
-> Use the conversion queue for multiple images: **Add files** → **Convert all** → **Download ZIP**.
 
 ## Technical Details
 
@@ -160,3 +155,5 @@ Before submitting, verify your changes against the basics: the page loads withou
 ## License
 
 Licensed under the [MIT License](LICENSE). See the `LICENSE` file for details.
+
+The project is based on [color-e-paper-image-converter](https://gitlab.com/matthew/color-e-paper-image-converter) by Matthew.
