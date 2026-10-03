@@ -143,6 +143,7 @@ No. Everything is processed locally in your browser. The page makes no network r
 E-ink reflects ambient light rather than emitting it. Contrast, colour saturation, and viewing angle all differ from an LCD or OLED screen. The included adjustments are designed to compensate for this, and the preview panel gives a closer approximation than the raw source image.
 
 **Uploading to the memory card**
+
 Prepare a FAT32 memory card, create a new "pic" folder in the root directory of the card, and place the images to be displayed in it
 
 ## Contributing
