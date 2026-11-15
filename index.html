@@ -208,6 +208,7 @@
 
     .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-dim); }
     .check-row input { accent-color: var(--accent); }
+    .panel-sep { border-top: 1px solid var(--border); margin: 8px 0; }
 
     /* ---------- Drop zone ---------- */
     .drop-zone {
@@ -436,6 +437,22 @@
               <option value="stucki">Stucki</option>
             </select>
           </div>
+          <div class="field">
+            <span class="lbl">Color Matching</span>
+            <select id="ditherColorMatching">
+              <option value="weighted">Weighted RGB</option>
+              <option value="lab">LAB (perceptual)</option>
+              <option value="chroma">Chroma-aware</option>
+            </select>
+          </div>
+          <div class="field">
+            <span class="lbl">Mode</span>
+            <select id="ditheringType">
+              <option value="errorDiffusion">Error Diffusion</option>
+              <option value="quantizationOnly">Quantization Only</option>
+              <option value="ordered">Bayer Ordered</option>
+            </select>
+          </div>
           <div class="ctl">
             <div class="head">
               <span class="name">Strength</span>
@@ -447,6 +464,59 @@
           <div class="check-row">
             <input type="checkbox" id="ditherSerpentine" checked>
             <label for="ditherSerpentine">Serpentine scan</label>
+          </div>
+          <div class="panel-sep"></div>
+          <h3 style="margin: 8px 0 4px; font-size: 12px; color: var(--text-dim);">Range Fitting</h3>
+          <div class="field">
+            <span class="lbl">Mode</span>
+            <select id="drcMode">
+              <option value="off">Off</option>
+              <option value="display">Display Range</option>
+              <option value="auto">Auto</option>
+            </select>
+          </div>
+          <div class="ctl" id="drcStrengthWrap">
+            <div class="head">
+              <span class="name">Strength</span>
+              <span class="value" id="drcStrengthVal">100%</span>
+              <button class="reset" data-reset="drcStrength" title="Reset">&#8634;</button>
+            </div>
+            <input type="range" id="drcStrength" min="0" max="200" step="1" value="100">
+          </div>
+          <div class="ctl" id="drcLowPctWrap">
+            <div class="head">
+              <span class="name">Low %</span>
+              <span class="value" id="drcLowPctVal">1%</span>
+            </div>
+            <input type="range" id="drcLowPct" min="0" max="20" step="1" value="1">
+          </div>
+          <div class="ctl" id="drcHighPctWrap">
+            <div class="head">
+              <span class="name">High %</span>
+              <span class="value" id="drcHighPctVal">99%</span>
+            </div>
+            <input type="range" id="drcHighPct" min="80" max="100" step="1" value="99">
+          </div>
+          <div class="check-row">
+            <input type="checkbox" id="drcPreserveWhite">
+            <label for="drcPreserveWhite">Preserve paper white</label>
+          </div>
+          <div class="panel-sep"></div>
+          <h3 style="margin: 8px 0 4px; font-size: 12px; color: var(--text-dim);">Paper Normalization</h3>
+          <div class="field">
+            <span class="lbl">Mode</span>
+            <select id="pnMode">
+              <option value="off">Off</option>
+              <option value="warmPaper">Warm Paper</option>
+            </select>
+          </div>
+          <div class="ctl" id="pnStrengthWrap">
+            <div class="head">
+              <span class="name">Strength</span>
+              <span class="value" id="pnStrengthVal">100%</span>
+              <button class="reset" data-reset="pnStrength" title="Reset">&#8634;</button>
+            </div>
+            <input type="range" id="pnStrength" min="0" max="200" step="1" value="100">
           </div>
         </div>
       </div>
@@ -669,7 +739,7 @@
       }
     };
 
-    const DITHER_DEFAULTS = { algorithm: 'floyd', strength: 80, serpentine: true };
+    const DITHER_DEFAULTS = { algorithm: 'floyd', strength: 80, serpentine: true, colorMatching: 'weighted', ditheringType: 'errorDiffusion', dynamicRangeCompression: { mode: 'off' }, paperNormalization: { mode: 'off' } };
 
     const PRESETS = {
       natural: {
@@ -879,7 +949,9 @@
       dropZone: $('emptyState'), changeImageBtn: $('changeImageBtn'), fileInput: $('fileInput'), imageInfo: $('imageInfo'),
       orientation: $('orientation'), widthInput: $('widthInput'), heightInput: $('heightInput'),
       adjustControls: $('adjustControls'), autoSummary: $('autoSummary'), autoDetailWrap: $('autoDetailWrap'), autoDetail: $('ctl_autoDetail'), autoDetailVal: $('adjVal_autoDetail'), paletteList: $('paletteList'),
-      ditherAlgorithm: $('ditherAlgorithm'), ditherStrength: $('ditherStrength'), ditherStrengthVal: $('ditherStrengthVal'), ditherSerpentine: $('ditherSerpentine'),
+      ditherAlgorithm: $('ditherAlgorithm'), ditherColorMatching: $('ditherColorMatching'), ditheringType: $('ditheringType'), ditherStrength: $('ditherStrength'), ditherStrengthVal: $('ditherStrengthVal'), ditherSerpentine: $('ditherSerpentine'),
+      drcMode: $('drcMode'), drcStrength: $('drcStrength'), drcStrengthVal: $('drcStrengthVal'), drcLowPct: $('drcLowPct'), drcLowPctVal: $('drcLowPctVal'), drcHighPct: $('drcHighPct'), drcHighPctVal: $('drcHighPctVal'), drcPreserveWhite: $('drcPreserveWhite'),
+      pnMode: $('pnMode'), pnStrength: $('pnStrength'), pnStrengthVal: $('pnStrengthVal'),
       outputFormat: $('outputFormat'), downloadBtn: $('downloadBtn'),
       exportSettingsBtn: $('exportSettingsBtn'), importSettingsBtn: $('importSettingsBtn'), settingsFile: $('settingsFile'),
       emptyState: $('emptyState'), previewGrid: $('previewGrid'), originalImg: $('originalImg'),
@@ -1163,6 +1235,238 @@
       return value;
     }
 
+    /**
+     * Image kind classification for content-aware processing.
+     * Returns { kind, metrics, style, kindScores }.
+     * Kinds: 'photo', 'lowContrastPhoto', 'highContrastPhoto', 'flatIllustration', 'textOrUi', 'lineArt', 'pixelArt', 'unknown'
+     */
+    function classifyImageKind(work, w, h) {
+      const stride = Math.max(1, Math.ceil(Math.sqrt((w * h) / 120000)));
+      const lumBins = 256, satBins = 64;
+      const hist = new Float64Array(lumBins);
+      const satHist = new Float64Array(satBins);
+      let lumSum = 0, satSum = 0, warm = 0, samples = 0;
+      let maxLum = 0, minLum = 1;
+      const flatDiffs = [];
+      for (let y = 0; y < h; y += stride) {
+        for (let x = 0; x < w; x += stride) {
+          const i = (y * w + x) * 3;
+          const r = work[i], g = work[i + 1], b = work[i + 2];
+          const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+          const sat = mx <= 0.0001 ? 0 : (mx - mn) / mx;
+          lumSum += lum; satSum += sat;
+          hist[Math.min(lumBins - 1, Math.floor(lum * lumBins))]++;
+          satHist[Math.min(satBins - 1, Math.floor(sat * satBins))]++;
+          if (r > g && r - b > 0.15) warm++;
+          if (lum > maxLum) maxLum = lum;
+          if (lum < minLum) minLum = lum;
+          samples++;
+        }
+      }
+      const meanLum = lumSum / samples;
+      const meanSat = satSum / samples;
+      const warmFraction = warm / samples;
+      const darkVal = percentileFromHist(hist, samples, 0.10);
+      const medianLum = percentileFromHist(hist, samples, 0.5);
+      const highlightVal = percentileFromHist(hist, samples, 0.90);
+      let varSum = 0;
+      for (let i = 0; i < lumBins; i++) {
+        const d = (i + 0.5) / lumBins - meanLum;
+        varSum += hist[i] * d * d;
+      }
+      const stdDev = Math.sqrt(varSum / samples);
+      const shadowTop = Math.floor(0.02 * lumBins);
+      const highlightBot = Math.ceil(0.98 * lumBins);
+      let shadowClip = 0, highlightClip = 0;
+      for (let i = 0; i <= shadowTop; i++) shadowClip += hist[i];
+      for (let i = highlightBot; i < lumBins; i++) highlightClip += hist[i];
+      const shadowClipPct = shadowClip / samples;
+      const highlightClipPct = highlightClip / samples;
+      let satHigh = 0;
+      for (let i = Math.floor(0.5 * satBins); i < satBins; i++) satHigh += satHist[i];
+      const saturatedFraction = satHigh / samples;
+      let flatCount = 0;
+      for (let y = stride; y < h - stride; y += stride) {
+        for (let x = stride; x < w - stride; x += stride) {
+          const i = (y * w + x) * 3;
+          const r = work[i], g = work[i + 1], b = work[i + 2];
+          let localMax = 0, localMin = 1;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const ni = ((y + dy) * w + (x + dx)) * 3;
+              const nr = work[ni], ng = work[ni + 1], nb = work[ni + 2];
+              const nlum = 0.2126 * nr + 0.7152 * ng + 0.0722 * nb;
+              if (nlum > localMax) localMax = nlum;
+              if (nlum < localMin) localMin = nlum;
+            }
+          }
+          if (localMax - localMin < 0.02) flatCount++;
+        }
+      }
+      const flatRatio = samples > 0 ? flatCount / samples : 0;
+      const lumaRange = maxLum - minLum;
+      const grayRatio = 1 - Math.min(1, meanSat * 2);
+      let edgeCount = 0;
+      for (let y = stride; y < h - stride; y += stride) {
+        for (let x = stride; x < w - stride; x += stride) {
+          const i = (y * w + x) * 3;
+          const lum = 0.2126 * work[i] + 0.7152 * work[i+1] + 0.0722 * work[i+2];
+          let maxDiff = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const ni = ((y + dy) * w + (x + dx)) * 3;
+              const nlum = 0.2126 * work[ni] + 0.7152 * work[ni+1] + 0.0722 * work[ni+2];
+              maxDiff = Math.max(maxDiff, Math.abs(nlum - lum));
+            }
+          }
+          if (maxDiff > 0.15) edgeCount++;
+        }
+      }
+      const edgeDensity = edgeCount / Math.max(1, samples);
+      let softChangeCount = 0;
+      for (let y = stride; y < h - stride; y += stride) {
+        for (let x = stride; x < w - stride; x += stride) {
+          const i = (y * w + x) * 3;
+          const lum = 0.2126 * work[i] + 0.7152 * work[i+1] + 0.0722 * work[i+2];
+          let maxDiff = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (dx === 0 && dy === 0) continue;
+              const ni = ((y + dy) * w + (x + dx)) * 3;
+              const nlum = 0.2126 * work[ni] + 0.7152 * work[ni+1] + 0.0722 * work[ni+2];
+              maxDiff = Math.max(maxDiff, Math.abs(nlum - lum));
+            }
+          }
+          if (maxDiff > 0.02 && maxDiff <= 0.15) softChangeCount++;
+        }
+      }
+      const softChangeRatio = softChangeCount / Math.max(1, samples);
+      let topColorCount = 0;
+      const colorCounts = new Map();
+      for (let y = 0; y < h; y += stride) {
+        for (let x = 0; x < w; x += stride) {
+          const i = (y * w + x) * 3;
+          const r = Math.round(work[i] * 255), g = Math.round(work[i+1] * 255), b = Math.round(work[i+2] * 255);
+          const key = r + ',' + g + ',' + b;
+          colorCounts.set(key, (colorCounts.get(key) || 0) + 1);
+        }
+      }
+      let maxColorCount = 0;
+      for (const count of colorCounts.values()) if (count > maxColorCount) maxColorCount = count;
+      const topColorCoverage = maxColorCount / Math.max(1, samples);
+      const paletteEntropy = computeEntropy(colorCounts, samples);
+      const highSaturationRatio = meanSat > 0.4 ? 1 : 0;
+      const warmPaperRatio = meanLum > 0.6 && meanSat < 0.2 && warmFraction > 0.3 ? 1 : 0;
+      const darkNeutralRatio = meanLum < 0.3 && meanSat < 0.15 ? 1 : 0;
+      const kindScores = {
+        photo: 0,
+        lowContrastPhoto: 0,
+        highContrastPhoto: 0,
+        flatIllustration: 0,
+        textOrUi: 0,
+        lineArt: 0,
+        pixelArt: 0,
+        unknown: 0
+      };
+      if (flatRatio > 0.6 && topColorCoverage > 0.3) {
+        kindScores.flatIllustration += 2;
+        kindScores.pixelArt += 1;
+        kindScores.textOrUi += 1;
+      }
+      if (edgeDensity > 0.2 && grayRatio > 0.6) {
+        kindScores.textOrUi += 2;
+        kindScores.lineArt += 2;
+      }
+      if (edgeDensity > 0.15 && grayRatio > 0.7 && highSaturationRatio === 0) {
+        kindScores.lineArt += 2;
+      }
+      if (softChangeRatio > 0.3 && stdDev > 50) {
+        kindScores.photo += 2;
+      }
+      if (stdDev < 35 && lumaRange < 0.5 && grayRatio > 0.5) {
+        kindScores.lowContrastPhoto += 2;
+      }
+      if (stdDev > 70 && lumaRange > 0.6) {
+        kindScores.highContrastPhoto += 2;
+      }
+      if (flatRatio > 0.7 && topColorCoverage > 0.7) {
+        kindScores.pixelArt += 2;
+      }
+      let bestKind = 'unknown', bestScore = -1;
+      for (const [kind, score] of Object.entries(kindScores)) {
+        if (score > bestScore) { bestScore = score; bestKind = kind; }
+      }
+      if (bestScore === 0) bestKind = 'photo';
+      const style = (bestKind === 'photo' || bestKind === 'lowContrastPhoto' || bestKind === 'highContrastPhoto') ? 'photo' : 'illustration';
+      return {
+        kind: bestKind,
+        metrics: {
+          meanLum, medianLum, stdDev, darkVal, highlightVal,
+          shadowClipPct, highlightClipPct, meanSat, saturatedFraction,
+          warmFraction, flatRatio, edgeDensity, softChangeRatio,
+          topColorCoverage, paletteEntropy, lumaRange, grayRatio,
+          highSaturationRatio, warmPaperRatio, darkNeutralRatio
+        },
+        style,
+        kindScores
+      };
+    }
+
+    function computeEntropy(counts, total) {
+      let entropy = 0;
+      for (const count of counts.values()) {
+        const p = count / total;
+        entropy -= p * Math.log2(p);
+      }
+      return entropy;
+    }
+
+    function percentileFromHist(hist, total, percentile) {
+      const target = total * percentile;
+      let sum = 0;
+      for (let i = 0; i < hist.length; i++) {
+        sum += hist[i];
+        if (sum >= target) return (i + 0.5) / hist.length;
+      }
+      return 1;
+    }
+
+    function rgbToLab(r, g, b) {
+      r = r <= 0.04045 ? r / 12.92 : Math.pow((r + 0.055) / 1.055, 2.4);
+      g = g <= 0.04045 ? g / 12.92 : Math.pow((g + 0.055) / 1.055, 2.4);
+      b = b <= 0.04045 ? b / 12.92 : Math.pow((b + 0.055) / 1.055, 2.4);
+      const x = r * 0.4124 + g * 0.3576 + b * 0.1805;
+      const y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+      const z = r * 0.0193 + g * 0.1192 + b * 0.9505;
+      const fx = x / 0.95047, fy = y, fz = z / 1.08883;
+      const lab = (t) => t > 0.008856 ? Math.pow(t, 1/3) : 7.787 * t + 16/116;
+      const L = 116 * lab(fy) - 16;
+      const a = 500 * (lab(fx) - lab(fy));
+      const b_ = 200 * (lab(fy) - lab(fz));
+      return [L, a, b_];
+    }
+
+    function deltaE(lab1, lab2) {
+      const dL = lab1[0] - lab2[0], da = lab1[1] - lab2[1], db = lab1[2] - lab2[2];
+      return Math.sqrt(dL * dL + da * da + db * db);
+    }
+
+    /**
+     * Apply adjustments with content-aware Auto (uses classification to tailor settings).
+     */
+    function applyContentAwareAutoAdjustments(work, w, h, detail) {
+      const classification = classifyImageKind(work, w, h);
+      const stats = analyseImage(work, w, h);
+      const controls = deriveAutoAdjustments(stats, detail);
+      const isSharpContent = ['textOrUi', 'lineArt', 'pixelArt'].includes(classification.kind);
+      if (isSharpContent) {
+        controls.saturation = Math.min(controls.saturation, 110);
+        controls.vibrance = Math.min(controls.vibrance, 105);
+      }
+      return { stats, controls, summary: getAutoSummary(stats, controls), classification };
+    }
 
     /**
      * Apply brightness/contrast/gamma/colour adjustments to a Float32 work buffer
@@ -1195,18 +1499,225 @@
     }
 
     /**
-     * Error-diffusion dithering in float space. Quantises each pixel to the closest
-     * palette colour (weighted-RGB with per-colour bias) and diffuses the error to
-     * neighbouring pixels using the given kernel. Mutates `work` in place.
+     * LAB-based dynamic range compression. Remaps lightness values to fit the
+     * display's reproducible range. Mutates `work` in place.
      */
-    function ditherFloat(work, w, h, profile, algorithm, strength, serpentine) {
-      const kernel = DITHER_KERNELS[algorithm] || DITHER_KERNELS.floyd;
-      const div = kernel.div;
-      const gain = strength / 100;
+    function applyDynamicRangeCompression(work, w, h, options) {
+      if (!options || options.mode === 'off') return;
+      const mode = options.mode || 'display';
+      const strength = options.strength ?? 1;
+      const lowPct = options.lowPercentile ?? 0.01;
+      const highPct = options.highPercentile ?? 0.99;
+      const preserveWhite = options.preserveWhite ?? false;
+      const whitePct = options.whitePreservePercentile ?? 0.99;
+      const whiteMinLuma = options.whitePreserveMinLuma ?? 0.9;
+      const whiteMaxSat = options.whitePreserveMaxSaturation ?? 0.1;
+
+      const stride = Math.max(1, Math.ceil(Math.sqrt((w * h) / 50000)));
+      const labL = new Float32Array(w * h);
+      let minL = 1, maxL = 0;
+      for (let y = 0; y < h; y += stride) {
+        for (let x = 0; x < w; x += stride) {
+          const i = (y * w + x) * 3;
+          const r = work[i], g = work[i + 1], b = work[i + 2];
+          const [L] = rgbToLab(r, g, b);
+          labL[y * w + x] = L;
+          if (L < minL) minL = L;
+          if (L > maxL) maxL = L;
+        }
+      }
+      const sortedL = Array.from(labL).filter(v => v > 0).sort((a, b) => a - b);
+      const lowIdx = Math.floor(sortedL.length * lowPct);
+      const highIdx = Math.ceil(sortedL.length * highPct);
+      const srcLow = sortedL[lowIdx] || minL;
+      const srcHigh = sortedL[highIdx] || maxL;
+
+      let dstLow, dstHigh;
+      if (mode === 'display') {
+        const profile = currentProfile();
+        const palL = profile.palette.map(c => rgbToLab(c.rgb[0]/255, c.rgb[1]/255, c.rgb[2]/255)[0]);
+        dstLow = Math.min(...palL) + (Math.max(...palL) - Math.min(...palL)) * 0.02;
+        dstHigh = Math.max(...palL) - (Math.max(...palL) - Math.min(...palL)) * 0.02;
+      } else if (mode === 'auto') {
+        dstLow = Math.max(0, srcLow - 10 * strength);
+        dstHigh = Math.min(100, srcHigh + 10 * strength);
+      } else {
+        return;
+      }
+
+      const scale = (dstHigh - dstLow) / Math.max(0.01, srcHigh - srcLow);
+      for (let i = 0; i < w * h * 3; i += 3) {
+        const r = work[i], g = work[i + 1], b = work[i + 2];
+        const [L, a, b_] = rgbToLab(r, g, b);
+        let newL = dstLow + (L - srcLow) * scale * strength;
+        newL = Math.max(0, Math.min(100, newL));
+        if (preserveWhite && L >= whiteMinLuma * 100 && (Math.max(r,g,b) - Math.min(r,g,b)) / Math.max(r,g,b) <= whiteMaxSat) {
+          newL = L;
+        }
+        const fy = (newL + 16) / 116;
+        const fx = a / 500 + fy;
+        const fz = fy - b_ / 200;
+        const lab = (t) => t > 0.206893 ? t * t * t : (t - 16/116) / 7.787;
+        const xr = lab(fx) * 0.95047;
+        const yr = lab(fy);
+        const zr = lab(fz) * 1.08883;
+        let nr = xr * 3.2406 + yr * -1.5372 + zr * -0.4986;
+        let ng = xr * -0.9689 + yr * 1.8758 + zr * 0.0415;
+        let nb = xr * 0.0557 + yr * -0.2040 + zr * 1.0570;
+        work[i] = nr > 1 ? 1 : nr < 0 ? 0 : nr;
+        work[i+1] = ng > 1 ? 1 : ng < 0 ? 0 : ng;
+        work[i+2] = nb > 1 ? 1 : nb < 0 ? 0 : nb;
+      }
+    }
+
+    /**
+     * Paper normalization for scanned prints. Neutralizes warm/yellowed paper
+     * while preserving red/black ink. Mutates `work` in place.
+     */
+    function applyPaperNormalization(work, w, h, options) {
+      if (!options || options.mode !== 'warmPaper') return;
+      const strength = options.strength ?? 1;
+      const minLuma = options.minLuma ?? 0.3;
+      const satThreshold = options.saturationThreshold ?? 0.2;
+      const warmBiasThresh = options.warmBiasThreshold ?? 0.1;
+      const blackAnchor = options.blackAnchor ?? 1;
+      const preserveRed = options.preserveRed ?? 0.8;
+      const paperWhite = options.paperWhite ? [options.paperWhite[0]/255, options.paperWhite[1]/255, options.paperWhite[2]/255] : [0.95, 0.95, 0.9];
+
+      for (let i = 0; i < w * h * 3; i += 3) {
+        let r = work[i], g = work[i + 1], b = work[i + 2];
+        const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        const sat = mx <= 0 ? 0 : (mx - mn) / mx;
+        const isWarm = r > g && r > b && (r - Math.max(g, b)) > warmBiasThresh;
+        const isDark = lum < minLuma;
+        const isRedInk = sat > satThreshold && r > g && r > b;
+        const isBlackInk = sat < 0.15 && lum < 0.4;
+
+        if (isWarm && !isDark && !isRedInk && !isBlackInk) {
+          const avg = (r + g + b) / 3;
+          const target = paperWhite[0] * 0.2126 + paperWhite[1] * 0.7152 + paperWhite[2] * 0.0722;
+          const blend = strength * (1 - lum / Math.max(0.01, target));
+          r = r * (1 - blend) + paperWhite[0] * blend;
+          g = g * (1 - blend) + paperWhite[1] * blend;
+          b = b * (1 - blend) + paperWhite[2] * blend;
+        }
+        if (isRedInk) {
+          r = Math.min(1, r * (1 + (1 - preserveRed) * 0.5));
+          g = g * preserveRed;
+          b = b * preserveRed;
+        }
+        if (isBlackInk) {
+          r = g = b = Math.min(lum * blackAnchor, 0.1);
+        }
+        work[i] = r > 1 ? 1 : r < 0 ? 0 : r;
+        work[i + 1] = g > 1 ? 1 : g < 0 ? 0 : g;
+        work[i + 2] = b > 1 ? 1 : b < 0 ? 0 : b;
+      }
+    }
+
+    /**
+     * Dithering in float space. Supports error diffusion, quantization-only,
+     * and Bayer ordered dithering. Mutates `work` in place.
+     */
+    function ditherFloat(work, w, h, profile, algorithm, strength, serpentine, colorMatching, ditheringType) {
       const pal = profile.palette;
       const wt = profile.weights;
       const biasMap = profileBiases(profile.id);
       const cache = new Map();
+      const isQuantOnly = ditheringType === 'quantizationOnly';
+      const isBayer = ditheringType === 'ordered';
+
+      if (isBayer) {
+        const bayer8 = [
+          [0, 32, 8, 40, 2, 34, 10, 42],
+          [48, 16, 56, 24, 50, 18, 58, 26],
+          [12, 44, 4, 36, 14, 46, 6, 38],
+          [60, 28, 52, 20, 62, 30, 54, 22],
+          [3, 35, 11, 43, 1, 33, 9, 41],
+          [51, 19, 59, 27, 49, 17, 57, 25],
+          [15, 47, 7, 39, 13, 45, 5, 37],
+          [63, 31, 55, 23, 61, 29, 53, 21]
+        ];
+        const threshold = strength / 100;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const idx = (y * w + x) * 3;
+            const or = work[idx], og = work[idx + 1], ob = work[idx + 2];
+            let newRgb = cache.get(Math.round(or*255) + ',' + Math.round(og*255) + ',' + Math.round(ob*255));
+            if (!newRgb) {
+              let bestIdx = 0, bestDist = Infinity;
+              for (let k = 0; k < pal.length; k++) {
+                const cr = pal[k].rgb[0]/255, cg = pal[k].rgb[1]/255, cb = pal[k].rgb[2]/255;
+                let dist;
+                if (colorMatching === 'lab') {
+                  const lab1 = rgbToLab(or, og, ob);
+                  const lab2 = rgbToLab(cr, cg, cb);
+                  dist = deltaE(lab1, lab2);
+                } else if (colorMatching === 'chroma') {
+                  const dr = or-cr, dg = og-cg, db = ob-cb;
+                  const lum = or * 0.2126 + og * 0.7152 + ob * 0.0722;
+                  const clum = cr * 0.2126 + cg * 0.7152 + cb * 0.0722;
+                  const chr1 = Math.sqrt(dr*dr + dg*dg + db*db);
+                  const chr2 = Math.sqrt((or-cr)*(or-cr) + (og-cg)*(og-cg) + (ob-cb)*(ob-cb));
+                  dist = wt.r*dr*dr + wt.g*dg*dg + wt.b*db*db + 0.5 * Math.abs(chr1 - chr2);
+                } else {
+                  const dr = or-cr, dg = og-cg, db = ob-cb;
+                  dist = wt.r*dr*dr + wt.g*dg*dg + wt.b*db*db;
+                }
+                const bias = (biasMap[pal[k].name] || DEFAULT_BIAS) / 100;
+                if (bias > 0) dist = dist / bias;
+                if (dist < bestDist) { bestDist = dist; bestIdx = k; }
+              }
+              newRgb = pal[bestIdx].rgb;
+              if (cache.size < CACHE_SIZE_LIMIT) cache.set(Math.round(or*255) + ',' + Math.round(og*255) + ',' + Math.round(ob*255), newRgb);
+            }
+            const bayerVal = bayer8[y & 7][x & 7] / 64;
+            const adjustedThreshold = threshold + (bayerVal - 0.5) * 0.2;
+            const nr = newRgb[0]/255, ng = newRgb[1]/255, nb = newRgb[2]/255;
+            work[idx] = nr; work[idx+1] = ng; work[idx+2] = nb;
+          }
+        }
+        return;
+      }
+
+      if (isQuantOnly) {
+        for (let i = 0; i < w * h * 3; i += 3) {
+          const or = work[i], og = work[i + 1], ob = work[i + 2];
+          let newRgb = cache.get(Math.round(or*255) + ',' + Math.round(og*255) + ',' + Math.round(ob*255));
+          if (!newRgb) {
+            let bestIdx = 0, bestDist = Infinity;
+            for (let k = 0; k < pal.length; k++) {
+              const cr = pal[k].rgb[0]/255, cg = pal[k].rgb[1]/255, cb = pal[k].rgb[2]/255;
+              let dist;
+              if (colorMatching === 'lab') {
+                const lab1 = rgbToLab(or, og, ob);
+                const lab2 = rgbToLab(cr, cg, cb);
+                dist = deltaE(lab1, lab2);
+              } else if (colorMatching === 'chroma') {
+                const dr = or-cr, dg = og-cg, db = ob-cb;
+                const chr1 = Math.sqrt(dr*dr + dg*dg + db*db);
+                dist = wt.r*dr*dr + wt.g*dg*dg + wt.b*db*db + 0.5 * chr1;
+              } else {
+                const dr = or-cr, dg = og-cg, db = ob-cb;
+                dist = wt.r*dr*dr + wt.g*dg*dg + wt.b*db*db;
+              }
+              const bias = (biasMap[pal[k].name] || DEFAULT_BIAS) / 100;
+              if (bias > 0) dist = dist / bias;
+              if (dist < bestDist) { bestDist = dist; bestIdx = k; }
+            }
+            newRgb = pal[bestIdx].rgb;
+            if (cache.size < CACHE_SIZE_LIMIT) cache.set(Math.round(or*255) + ',' + Math.round(og*255) + ',' + Math.round(ob*255), newRgb);
+          }
+          work[i] = newRgb[0]/255; work[i+1] = newRgb[1]/255; work[i+2] = newRgb[2]/255;
+        }
+        return;
+      }
+
+      const kernel = DITHER_KERNELS[algorithm] || DITHER_KERNELS.floyd;
+      const div = kernel.div;
+      const gain = strength / 100;
+
       for (let y = 0; y < h; y++) {
         const ltr = !serpentine || (y % 2 === 0);
         for (let x = 0; x < w; x++) {
@@ -1218,8 +1729,19 @@
             let bestIdx = 0, bestDist = Infinity;
             for (let k = 0; k < pal.length; k++) {
               const cr = pal[k].rgb[0]/255, cg = pal[k].rgb[1]/255, cb = pal[k].rgb[2]/255;
-              const dr = or-cr, dg = og-cg, db = ob-cb;
-              let dist = wt.r*dr*dr + wt.g*dg*dg + wt.b*db*db;
+              let dist;
+              if (colorMatching === 'lab') {
+                const lab1 = rgbToLab(or, og, ob);
+                const lab2 = rgbToLab(cr, cg, cb);
+                dist = deltaE(lab1, lab2);
+              } else if (colorMatching === 'chroma') {
+                const dr = or-cr, dg = og-cg, db = ob-cb;
+                const chr = Math.sqrt(dr*dr + dg*dg + db*db);
+                dist = wt.r*dr*dr + wt.g*dg*dg + wt.b*db*db + 0.3 * chr;
+              } else {
+                const dr = or-cr, dg = og-cg, db = ob-cb;
+                dist = wt.r*dr*dr + wt.g*dg*dg + wt.b*db*db;
+              }
               const bias = (biasMap[pal[k].name] || DEFAULT_BIAS) / 100;
               if (bias > 0) dist = dist / bias;
               if (dist < bestDist) { bestDist = dist; bestIdx = k; }
@@ -1629,6 +2151,12 @@
       let controls = settings.controls;
       const isAuto = settings.presetId === 'auto';
       UI.autoDetailWrap.classList.toggle('hidden', !isAuto);
+
+      let classification = null;
+      let colorMatching = settings.dither.colorMatching || 'weighted';
+      let ditheringType = settings.dither.ditheringType || 'errorDiffusion';
+      let algorithm = settings.dither.algorithm;
+
       if (isAuto) {
         const rec = autoRecommendation(work, targetW, targetH, settings.autoDetail / 100);
         controls = rec.controls;
@@ -1638,11 +2166,46 @@
         settings.controls = { ...rec.controls };
         renderAutoSummary(rec.summary);
         syncAdjustControls();
+
+        // Content-aware per-kind settings
+        if (rec.classification) {
+          classification = rec.classification;
+          const kind = classification.kind;
+          const isSharpContent = ['textOrUi', 'lineArt', 'pixelArt'].includes(kind);
+
+          if (isSharpContent) {
+            ditheringType = 'quantizationOnly';
+            colorMatching = 'lab';
+            algorithm = 'floyd';
+          } else if (kind === 'highContrastPhoto') {
+            algorithm = 'stucki';
+            colorMatching = 'weighted';
+          } else if (kind === 'lowContrastPhoto') {
+            colorMatching = 'lab';
+            algorithm = 'floyd';
+          } else if (kind === 'flatIllustration') {
+            colorMatching = 'weighted';
+            algorithm = 'floyd';
+          } else {
+            colorMatching = 'weighted';
+            algorithm = 'floyd';
+          }
+        }
       } else {
         renderAutoSummary(null);
       }
 
       applyAdjustments(work, targetW, targetH, controls);
+
+      const drc = settings.dither.dynamicRangeCompression;
+      if (drc && drc.mode !== 'off') {
+        applyDynamicRangeCompression(work, targetW, targetH, drc);
+      }
+
+      const pn = settings.dither.paperNormalization;
+      if (pn && pn.mode === 'warmPaper') {
+        applyPaperNormalization(work, targetW, targetH, pn);
+      }
 
       const enhancedImg = new ImageData(targetW, targetH);
       const ed = enhancedImg.data;
@@ -1653,7 +2216,7 @@
         ed[i + 3] = 255;
       }
 
-      ditherFloat(work, targetW, targetH, profile, settings.dither.algorithm, settings.dither.strength, settings.dither.serpentine);
+      ditherFloat(work, targetW, targetH, profile, algorithm, settings.dither.strength, settings.dither.serpentine, colorMatching, ditheringType);
 
       const finalImg = new ImageData(targetW, targetH);
       const fd = finalImg.data;
@@ -1837,10 +2400,25 @@
           valSpan.textContent = meta.toText(parseFloat(STATE.settings.controls[meta.key]));
         }
       }
-      UI.ditherStrength.value = STATE.settings.dither.strength;
-      UI.ditherStrengthVal.textContent = STATE.settings.dither.strength + '%';
-      UI.ditherAlgorithm.value = STATE.settings.dither.algorithm;
-      UI.ditherSerpentine.checked = STATE.settings.dither.serpentine;
+      const d = STATE.settings.dither;
+      UI.ditherStrength.value = d.strength;
+      UI.ditherStrengthVal.textContent = d.strength + '%';
+      UI.ditherAlgorithm.value = d.algorithm;
+      UI.ditherColorMatching.value = d.colorMatching || 'weighted';
+      UI.ditheringType.value = d.ditheringType || 'errorDiffusion';
+      UI.ditherSerpentine.checked = d.serpentine;
+      UI.drcMode.value = d.dynamicRangeCompression?.mode || 'off';
+      UI.drcStrength.value = d.dynamicRangeCompression?.strength || 100;
+      UI.drcStrengthVal.textContent = (d.dynamicRangeCompression?.strength || 100) + '%';
+      UI.drcLowPct.value = d.dynamicRangeCompression?.lowPercentile ? d.dynamicRangeCompression.lowPercentile * 100 : 1;
+      UI.drcLowPctVal.textContent = (d.dynamicRangeCompression?.lowPercentile ? d.dynamicRangeCompression.lowPercentile * 100 : 1) + '%';
+      UI.drcHighPct.value = d.dynamicRangeCompression?.highPercentile ? d.dynamicRangeCompression.highPercentile * 100 : 99;
+      UI.drcHighPctVal.textContent = (d.dynamicRangeCompression?.highPercentile ? d.dynamicRangeCompression.highPercentile * 100 : 99) + '%';
+      UI.drcPreserveWhite.checked = d.dynamicRangeCompression?.preserveWhite || false;
+      UI.pnMode.value = d.paperNormalization?.mode || 'off';
+      UI.pnStrength.value = d.paperNormalization?.strength || 100;
+      UI.pnStrengthVal.textContent = (d.paperNormalization?.strength || 100) + '%';
+      UI.ditherSerpentine.checked = d.serpentine;
       UI.autoDetail.value = STATE.settings.autoDetail;
       UI.autoDetailVal.textContent = STATE.settings.autoDetail;
     }
@@ -1999,14 +2577,50 @@
               for (let i = 0, j = 0; i < d.length; i += 4, j += 3) {
                 work[j] = d[i] / 255; work[j+1] = d[i+1] / 255; work[j+2] = d[i+2] / 255;
               }
-              // Auto in batch mode analyses each file independently (the main
-              // image cache is not reused), so every file gets its own recommendation.
+
+              let colorMatching = dither.colorMatching || 'weighted';
+              let ditheringType = dither.ditheringType || 'errorDiffusion';
+              let algorithm = dither.algorithm;
+
               if (STATE.settings.presetId === 'auto') {
-                const rec = applyAutoAdjustments(work, targetW, targetH, STATE.settings.autoDetail / 100);
+                const rec = applyContentAwareAutoAdjustments(work, targetW, targetH, STATE.settings.autoDetail / 100);
                 controls = rec.controls;
+                if (rec.classification) {
+                  const kind = rec.classification.kind;
+                  const isSharpContent = ['textOrUi', 'lineArt', 'pixelArt'].includes(kind);
+
+                  if (isSharpContent) {
+                    ditheringType = 'quantizationOnly';
+                    colorMatching = 'lab';
+                    algorithm = 'floyd';
+                  } else if (kind === 'highContrastPhoto') {
+                    algorithm = 'stucki';
+                    colorMatching = 'weighted';
+                  } else if (kind === 'lowContrastPhoto') {
+                    colorMatching = 'lab';
+                    algorithm = 'floyd';
+                  } else if (kind === 'flatIllustration') {
+                    colorMatching = 'weighted';
+                    algorithm = 'floyd';
+                  } else {
+                    colorMatching = 'weighted';
+                    algorithm = 'floyd';
+                  }
+                }
               }
               applyAdjustments(work, targetW, targetH, controls);
-              ditherFloat(work, targetW, targetH, profile, dither.algorithm, dither.strength, dither.serpentine);
+
+              const drc = dither.dynamicRangeCompression;
+              if (drc && drc.mode !== 'off') {
+                applyDynamicRangeCompression(work, targetW, targetH, drc);
+              }
+
+              const pn = dither.paperNormalization;
+              if (pn && pn.mode === 'warmPaper') {
+                applyPaperNormalization(work, targetW, targetH, pn);
+              }
+
+              ditherFloat(work, targetW, targetH, profile, algorithm, dither.strength, dither.serpentine, colorMatching, ditheringType);
               const out = new ImageData(targetW, targetH);
               const od = out.data;
               for (let i = 0, j = 0; i < od.length; i += 4, j += 3) {
@@ -2190,8 +2804,73 @@
       saveSettings();
       scheduleRender();
     });
+    UI.ditherColorMatching.addEventListener('change', () => {
+      STATE.settings.dither.colorMatching = UI.ditherColorMatching.value;
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+    UI.ditheringType.addEventListener('change', () => {
+      STATE.settings.dither.ditheringType = UI.ditheringType.value;
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
     UI.ditherSerpentine.addEventListener('change', () => {
       STATE.settings.dither.serpentine = UI.ditherSerpentine.checked;
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+    UI.drcMode.addEventListener('change', () => {
+      STATE.settings.dither.dynamicRangeCompression = STATE.settings.dither.dynamicRangeCompression || { mode: 'off' };
+      STATE.settings.dither.dynamicRangeCompression.mode = UI.drcMode.value;
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+    UI.drcStrength.addEventListener('input', () => {
+      STATE.settings.dither.dynamicRangeCompression = STATE.settings.dither.dynamicRangeCompression || { mode: 'off' };
+      STATE.settings.dither.dynamicRangeCompression.strength = parseInt(UI.drcStrength.value, 10);
+      UI.drcStrengthVal.textContent = UI.drcStrength.value + '%';
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+    UI.drcLowPct.addEventListener('input', () => {
+      STATE.settings.dither.dynamicRangeCompression = STATE.settings.dither.dynamicRangeCompression || { mode: 'off' };
+      STATE.settings.dither.dynamicRangeCompression.lowPercentile = parseInt(UI.drcLowPct.value, 10) / 100;
+      UI.drcLowPctVal.textContent = UI.drcLowPct.value + '%';
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+    UI.drcHighPct.addEventListener('input', () => {
+      STATE.settings.dither.dynamicRangeCompression = STATE.settings.dither.dynamicRangeCompression || { mode: 'off' };
+      STATE.settings.dither.dynamicRangeCompression.highPercentile = parseInt(UI.drcHighPct.value, 10) / 100;
+      UI.drcHighPctVal.textContent = UI.drcHighPct.value + '%';
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+    UI.drcPreserveWhite.addEventListener('change', () => {
+      STATE.settings.dither.dynamicRangeCompression = STATE.settings.dither.dynamicRangeCompression || { mode: 'off' };
+      STATE.settings.dither.dynamicRangeCompression.preserveWhite = UI.drcPreserveWhite.checked;
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+    UI.pnMode.addEventListener('change', () => {
+      STATE.settings.dither.paperNormalization = STATE.settings.dither.paperNormalization || { mode: 'off' };
+      STATE.settings.dither.paperNormalization.mode = UI.pnMode.value;
+      markCustomPreset();
+      saveSettings();
+      scheduleRender();
+    });
+    UI.pnStrength.addEventListener('input', () => {
+      STATE.settings.dither.paperNormalization = STATE.settings.dither.paperNormalization || { mode: 'off' };
+      STATE.settings.dither.paperNormalization.strength = parseInt(UI.pnStrength.value, 10);
+      UI.pnStrengthVal.textContent = UI.pnStrength.value + '%';
       markCustomPreset();
       saveSettings();
       scheduleRender();
