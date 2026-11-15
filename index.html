@@ -739,7 +739,7 @@
       }
     };
 
-    const DITHER_DEFAULTS = { algorithm: 'floyd', strength: 80, serpentine: true, colorMatching: 'weighted', ditheringType: 'errorDiffusion', dynamicRangeCompression: { mode: 'off' }, paperNormalization: { mode: 'off' } };
+    const DITHER_DEFAULTS = { algorithm: 'floyd', strength: 80, serpentine: true, colorMatching: 'weighted', ditheringType: 'errorDiffusion', dynamicRangeCompression: { mode: 'off', strength: 100, lowPercentile: 0.01, highPercentile: 0.99, preserveWhite: false }, paperNormalization: { mode: 'off', strength: 100, minLuma: 0.3, saturationThreshold: 0.2, warmBiasThreshold: 0.1, blackAnchor: 1, preserveRed: 0.8, paperWhite: [248, 248, 246] } };
 
     const PRESETS = {
       natural: {
@@ -3010,6 +3010,18 @@
           }
         } else if (target === 'ditherStrength') {
           STATE.settings.dither.strength = DITHER_DEFAULTS.strength;
+          syncAdjustControls();
+          saveSettings();
+          scheduleRender();
+        } else if (target === 'drcStrength') {
+          STATE.settings.dither.dynamicRangeCompression = STATE.settings.dither.dynamicRangeCompression || { mode: 'off' };
+          STATE.settings.dither.dynamicRangeCompression.strength = DITHER_DEFAULTS.dynamicRangeCompression.strength;
+          syncAdjustControls();
+          saveSettings();
+          scheduleRender();
+        } else if (target === 'pnStrength') {
+          STATE.settings.dither.paperNormalization = STATE.settings.dither.paperNormalization || { mode: 'off' };
+          STATE.settings.dither.paperNormalization.strength = DITHER_DEFAULTS.paperNormalization.strength;
           syncAdjustControls();
           saveSettings();
           scheduleRender();
