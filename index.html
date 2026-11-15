@@ -336,6 +336,10 @@
       <label class="tb-label" for="profileSelect">Display</label>
       <select id="profileSelect"></select>
     </div>
+    <div class="tb-group" id="measuredPaletteWrap">
+      <label class="tb-label" for="measuredPaletteSelect">Measured palette</label>
+      <select id="measuredPaletteSelect"></select>
+    </div>
     <div class="tb-group">
       <label class="tb-label" for="presetSelect">Preset</label>
       <select id="presetSelect"></select>
@@ -640,6 +644,31 @@
       }
     };
 
+    const PHOTO_B_MEASURED_PALETTES = {
+      'spectra 6 legacy': {
+        label: 'spectra 6 legacy',
+        colors: [
+          [25, 30, 33],      // Black
+          [232, 232, 232],   // White
+          [239, 222, 68],    // Yellow
+          [178, 19, 24],     // Red
+          [33, 87, 186],     // Blue
+          [18, 95, 32]       // Green
+        ]
+      },
+      'spectra 6': {
+        label: 'spectra 6',
+        colors: [
+          [31, 34, 38],      // Black
+          [185, 199, 201],   // White
+          [193, 187, 30],    // Yellow
+          [98, 32, 30],      // Red
+          [35, 63, 142],     // Blue
+          [53, 86, 58]       // Green
+        ]
+      }
+    };
+
     const DITHER_DEFAULTS = { algorithm: 'floyd', strength: 80, serpentine: true };
 
     const PRESETS = {
@@ -772,7 +801,8 @@
       width: 480,
       height: 800,
       autoDetail: 50,
-      presetId: ''
+      presetId: '',
+      photoBMeasuredPalette: 'spectra 6 legacy'
     };
 
     // -- Magic numbers extracted to named constants --
@@ -845,6 +875,7 @@
     const $ = id => document.getElementById(id);
     const UI = {
       profileSelect: $('profileSelect'), presetSelect: $('presetSelect'), resetBtn: $('resetBtn'), themeBtn: $('themeBtn'),
+      measuredPaletteSelect: $('measuredPaletteSelect'), measuredPaletteWrap: $('measuredPaletteWrap'),
       dropZone: $('emptyState'), changeImageBtn: $('changeImageBtn'), fileInput: $('fileInput'), imageInfo: $('imageInfo'),
       orientation: $('orientation'), widthInput: $('widthInput'), heightInput: $('heightInput'),
       adjustControls: $('adjustControls'), autoSummary: $('autoSummary'), autoDetailWrap: $('autoDetailWrap'), autoDetail: $('ctl_autoDetail'), autoDetailVal: $('adjVal_autoDetail'), paletteList: $('paletteList'),
@@ -2057,6 +2088,7 @@
       applyThemeToUI();
       buildProfileSelect();
       buildPresetSelect();
+      buildMeasuredPaletteSelect();
       UI.orientation.value = STATE.settings.orientation;
       UI.widthInput.value = STATE.settings.width;
       UI.heightInput.value = STATE.settings.height;
@@ -2173,6 +2205,15 @@
     UI.profileSelect.addEventListener('change', () => {
       STATE.settings.profileId = UI.profileSelect.value;
       markCustomPreset();
+      buildPaletteList();
+      buildMeasuredPaletteSelect();
+      saveSettings();
+      scheduleRender();
+    });
+
+    UI.measuredPaletteSelect.addEventListener('change', () => {
+      STATE.settings.photoBMeasuredPalette = UI.measuredPaletteSelect.value;
+      applyMeasuredPaletteToProfile(STATE.settings.profileId);
       buildPaletteList();
       saveSettings();
       scheduleRender();
@@ -2296,6 +2337,36 @@
         }
       });
     });
+
+    function buildMeasuredPaletteSelect() {
+      const profileId = STATE.settings.profileId;
+      const wrap = $('measuredPaletteWrap');
+      const select = $('measuredPaletteSelect');
+      if (profileId === 'photoB' || profileId === 'custom') {
+        wrap.classList.remove('hidden');
+        select.innerHTML = '';
+        for (const key of Object.keys(PHOTO_B_MEASURED_PALETTES)) {
+          const opt = document.createElement('option');
+          opt.value = key;
+          opt.textContent = PHOTO_B_MEASURED_PALETTES[key].label;
+          select.appendChild(opt);
+        }
+        select.value = STATE.settings.photoBMeasuredPalette || 'spectra 6 legacy';
+        applyMeasuredPaletteToProfile(profileId);
+      } else {
+        wrap.classList.add('hidden');
+      }
+    }
+
+    function applyMeasuredPaletteToProfile(profileId) {
+      const key = STATE.settings.photoBMeasuredPalette || 'spectra 6 legacy';
+      const measured = PHOTO_B_MEASURED_PALETTES[key];
+      if (!measured) return;
+      const profile = STATE.profiles[profileId];
+      if (!profile) return;
+      const names = ['Black', 'White', 'Yellow', 'Red', 'Blue', 'Green'];
+      profile.palette = measured.colors.map((rgb, i) => ({ name: names[i], rgb }));
+    }
 
     /* ================= Init ================= */
     function init() {
